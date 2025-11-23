@@ -142,9 +142,3 @@
 -w /etc/crontab -p wa -k cron_changes
 -w /etc/cron.d/ -p wa -k cron_changes
 -w /usr/bin/crontab -p x -k cron_exec
-
-##########################################
-####  Optional: lock rules until reboot
-##########################################
-# Uncomment in production if you want immutable audit rules:
-# -e 2

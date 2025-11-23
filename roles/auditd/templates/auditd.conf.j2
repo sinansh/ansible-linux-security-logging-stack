@@ -1,0 +1,19 @@
+# Managed by Ansible (roles/auditd).
+#
+# Log file path (Critical for rsyslog imfile)
+log_file = /var/log/audit/audit.log
+
+# Log format
+log_format = ENRICHED
+
+# Maximum log file size in MiB
+max_log_file = 6
+
+# Number of rotated logs
+num_logs = 4
+
+# Action to take when max_log_file is reached
+max_log_file_action = ROTATE
+
+# Action to take when disk space is critically low
+disk_error_action = SINGLE

@@ -1,11 +1,15 @@
 #### Minimal rsyslog config to forward ONLY Sysmon and auditd logs to SIEM
 
+# Load the imfile module to read the audit.log file directly
+module(load="imfile")
+
 #### JSON output template for SIEM ingestion
 template(name="SiemJsonFmt" type="string"
          string='{"@timestamp":"%TIMESTAMP:::date-rfc3339%","host":"%HOSTNAME%","program":"%programname%","message":%msg:::json%}\n')
 
-#### Forward auditd logs
-if ($programname == "auditd") then {
+# Define a dedicated ruleset for Auditd logs
+ruleset(name="AuditdRuleset") {
+    # Forward Auditd logs to SIEM using the SIEM JSON template
     action(
         type="omfwd"
         target="{{ siem_host }}"
@@ -13,15 +17,26 @@ if ($programname == "auditd") then {
         protocol="{{ siem_protocol }}"
         template="SiemJsonFmt"
     )
-    stop
+    stop # Stop processing this message after forwarding
 }
+
+# Input for Auditd log file using imfile
+# Reads from the standard audit log path
+input(type="imfile"
+      File="/var/log/audit/audit.log"
+      Tag="auditd:"
+      StateFile="auditd-statefile" # To track position in the log file across restarts
+      Ruleset="AuditdRuleset"
+      startmsg.regex="^type=(?:SYSCALL|CWD|PATH|PROCTITLE|USER_START|USER_END|CRED_ACQ|CRED_DISP|LOGIN)"
+)
+
 
 #### Forward Sysmon for Linux logs
 #### NOTE: program name may appear as:
 #### - "sysmon"
 #### - "sysmonforlinux"
 #### You can check via: journalctl -u sysmon -o cat | head
-if ($programname == "sysmon" or $programname == "sysmonforlinux") then {
+if $programname == "sysmon" or $programname == "sysmonforlinux" then {
     action(
         type="omfwd"
         target="{{ siem_host }}"

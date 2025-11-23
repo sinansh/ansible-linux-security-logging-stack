@@ -7,6 +7,17 @@
     state: present
   become: true
 
+- name: Deploy auditd configuration file
+  template:
+    src: auditd.conf.j2
+    dest: /etc/audit/auditd.conf
+    owner: root
+    group: root
+    mode: '0640'
+  # Yapılandırma dosyası değiştiğinde Auditd'yi yeniden başlat
+  notify: Restart auditd
+  become: true
+
 - name: Ensure auditd service is enabled and running
   systemd:
     name: auditd
@@ -24,3 +35,13 @@
   notify:
     - Reload audit rules
   become: true
+
+- name: Disable audispd syslog plugin to prevent log duplication
+  ini_file:
+    path: /etc/audisp/plugins.d/syslog.conf
+    section: null
+    option: active
+    value: 'no'
+    mode: '0644'
+  become: true
+  notify: Restart auditd
