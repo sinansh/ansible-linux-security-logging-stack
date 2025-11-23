@@ -1,0 +1,7 @@
+# Ignore temporary and Ansible artifacts
+*.retry
+/tmp/
+.vagrant/
+.cache/
+/.vault_pass
+/.vscode/

@@ -1,0 +1,160 @@
+# This template deploys the audit ruleset used by the playbook.
+# Managed by roles/auditd; test on a non-production host first.
+
+# Remove all existing rules
+-D
+
+# Buffer size
+-b 8192
+
+# Failure mode (1: print error messages)
+-f 1
+
+# Continue loading rules even if there are errors
+-i
+
+##########################################
+####  Self-monitoring
+##########################################
+
+# Watch audit tooling and configuration
+-w /etc/audit/ -p wa -k auditconfig
+-w /etc/libaudit.conf -p wa -k auditconfig
+-w /etc/audisp/ -p wa -k audispconfig
+-w /sbin/auditctl -p x -k audittools
+-w /sbin/auditd -p x -k audittools
+
+# Monitor access to audit logs
+-w /var/log/audit/ -p wa -k audit_log_access
+
+##########################################
+####  Execution monitoring
+##########################################
+
+# Monitor commands executed by root (low-noise, high-value)
+-a exit,always -F arch=b64 -F euid=0 -S execve -k root_command
+-a exit,always -F arch=b32 -F euid=0 -S execve -k root_command
+
+# Monitor commands executed by real users (uid >=1000)
+-a exit,always -F arch=b64 -F euid>=1000 -S execve -k user_command
+-a exit,always -F arch=b32 -F euid>=1000 -S execve -k user_command
+
+##########################################
+####  Account and auth
+##########################################
+
+# Monitor user/group/password database changes
+-w /etc/group -p wa -k group_modifications
+-w /etc/passwd -p wa -k passwd_modifications
+-w /etc/gshadow -p wa -k group_modifications
+-w /etc/shadow -p wa -k passwd_modifications
+-w /etc/security/opasswd -p wa -k passwd_modifications
+
+# Monitor sudoers changes and sudo usage
+-w /etc/sudoers -p wa -k sudo_modifications
+-w /etc/sudoers.d -p wa -k sudo_modifications
+-w /usr/bin/sudo -p x -k sudo_execution
+
+# Monitor passwd binary executions (password changes)
+-w /usr/bin/passwd -p x -k passwd_modifications
+
+##########################################
+####  Host & network config
+##########################################
+
+# Hostname and domain name changes
+-a always,exit -F arch=b32 -S sethostname -S setdomainname -k network_modifications
+-a always,exit -F arch=b64 -S sethostname -S setdomainname -k network_modifications
+
+# Important network/config files
+-w /etc/hosts -p wa -k network_modifications
+-w /etc/sysconfig/network -p wa -k network_modifications
+-w /etc/network/ -p wa -k network_modifications
+-a always,exit -F dir=/etc/NetworkManager/ -F perm=wa -k network_modifications
+
+##########################################
+####  System state
+##########################################
+
+# Power/state commands (reboot/shutdown) and runlevel
+-w /sbin/shutdown -p x -k system_state_modifications
+-w /sbin/poweroff -p x -k system_state_modifications
+-w /sbin/reboot -p x -k system_state_modifications
+-w /sbin/halt -p x -k system_state_modifications
+-w /usr/sbin/runlevel -p x -k system_state_modifications
+
+##########################################
+####  Kernel modules
+##########################################
+
+# Track kernel module tools and changes
+-a always,exit -F perm=x -F auid!=-1 -F path=/sbin/insmod -k kernel_modules
+-a always,exit -F perm=x -F auid!=-1 -F path=/sbin/modprobe -k kernel_modules
+-a always,exit -F perm=x -F auid!=-1 -F path=/sbin/rmmod -k kernel_modules
+-a always,exit -F perm=x -F auid!=-1 -F path=/sbin/kmod -k kernel_modules
+
+# Monitor modprobe configuration
+-w /etc/modprobe.conf -p wa -k kernel_modules
+
+##########################################
+####  PAM and auth logs
+##########################################
+
+-w /etc/pam.d/ -p wa -k pam_modifications
+-w /etc/security/limits.conf -p wa -k pam_modifications
+
+# Login records
+-w /var/log/faillog -p wa -k login_modifications
+-w /var/log/lastlog -p wa -k login_modifications
+-w /var/log/tallylog -p wa -k login_modifications
+
+##########################################
+####  Suspicious execs & commands
+##########################################
+
+# Monitor common tools that attackers often use (watch execution)
+-w /usr/bin/wget -p x -k suspect_activity
+-w /usr/bin/curl -p x -k suspect_activity
+-w /bin/nc -p x -k suspect_activity
+-w /usr/bin/ssh -p x -k suspect_activity
+
+# Note: monitoring /tmp and /var/tmp for execs is noisy; avoid unless necessary
+
+##########################################
+####  Injection / Ptrace detection
+##########################################
+
+-a always,exit -F arch=b32 -S ptrace -k suspect_activity
+-a always,exit -F arch=b64 -S ptrace -k suspect_activity
+
+##########################################
+####  Additional OS-level watches (package, systemd, cron, fstab)
+##########################################
+
+# Debian/Ubuntu package tools and logs
+-w /usr/bin/dpkg -p x -k pkg_management
+-w /usr/bin/apt-get -p x -k pkg_management
+-w /usr/bin/apt -p x -k pkg_management
+-w /var/log/dpkg.log -p wa -k pkg_logs
+-w /var/log/apt/history.log -p wa -k pkg_logs
+
+# RPM-based package tools and logs
+-w /usr/bin/rpm -p x -k pkg_management
+-w /usr/bin/yum -p x -k pkg_management
+-w /usr/bin/dnf -p x -k pkg_management
+-w /var/log/yum.log -p wa -k pkg_logs
+
+# systemd service/unit file changes
+-w /etc/systemd/system/ -p wa -k systemd_unit_changes
+-w /lib/systemd/system/ -p wa -k systemd_unit_changes
+
+# fstab changes and mount syscalls (mount syscall can be noisy; test first)
+-w /etc/fstab -p wa -k fstab_changes
+-a always,exit -F arch=b64 -S mount -k mounts
+-a always,exit -F arch=b32 -S mount -k mounts
+
+# cron changes and crontab executions
+-w /etc/crontab -p wa -k cron_changes
+-w /etc/cron.d/ -p wa -k cron_changes
+-w /usr/bin/crontab -p x -k cron_exec
+

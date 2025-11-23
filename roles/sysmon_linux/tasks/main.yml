@@ -1,0 +1,146 @@
+---
+# Install SysmonForLinux using the official Microsoft packages as described in
+# the upstream INSTALL.md. Use distribution package repositories where
+# possible so upgrades are handled by the package manager.
+
+- name: Ensure directory for sysmon config exists
+  file:
+    path: "{{ sysmon_config_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  become: true
+
+# ----- Debian / Ubuntu -----
+- name: Register Microsoft package feed (Ubuntu)
+  shell: |
+    wget -q \
+      "https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb" \
+      -O /tmp/packages-microsoft-prod.deb
+    sudo dpkg -i /tmp/packages-microsoft-prod.deb
+  args:
+    warn: false
+  become: true
+  when: ansible_facts['os_family'] == 'Debian' and (ansible_distribution | lower) == 'ubuntu'
+
+- name: Register Microsoft package feed (Debian)
+  shell: |
+    wget -q \
+      "https://packages.microsoft.com/config/debian/$(. /etc/os-release && echo ${VERSION_ID%%.*})/packages-microsoft-prod.deb" \
+      -O /tmp/packages-microsoft-prod.deb
+    sudo dpkg -i /tmp/packages-microsoft-prod.deb
+  args:
+    warn: false
+  become: true
+  when: ansible_facts['os_family'] == 'Debian' and (ansible_distribution | lower) == 'debian'
+
+- name: apt update (Debian/Ubuntu)
+  apt:
+    update_cache: yes
+  become: true
+  when: ansible_facts['os_family'] == 'Debian'
+
+- name: Install sysmonforlinux package (Debian/Ubuntu)
+  package:
+    name: sysmonforlinux
+    state: present
+  become: true
+  when: ansible_facts['os_family'] == 'Debian'
+
+# ----- RHEL / CentOS / Fedora -----
+- name: Register Microsoft package feed (RHEL/CentOS)
+  shell: |
+    sudo rpm -Uvh \
+      "https://packages.microsoft.com/config/rhel/$(. /etc/os-release && echo ${VERSION_ID%%.*})/packages-microsoft-prod.rpm"
+  args:
+    warn: false
+  become: true
+  when: ansible_facts['os_family'] == 'RedHat' and (ansible_distribution | lower) not in ['fedora']
+
+- name: Register Microsoft package feed (Fedora)
+  shell: |
+    sudo rpm -Uvh \
+      "https://packages.microsoft.com/config/fedora/$(rpm -E %fedora)/packages-microsoft-prod.rpm"
+  args:
+    warn: false
+  become: true
+  when: (ansible_distribution | lower) == 'fedora'
+
+- name: Install sysmonforlinux package (RHEL/Fedora)
+  package:
+    name: sysmonforlinux
+    state: present
+  become: true
+  when: ansible_facts['os_family'] == 'RedHat' or (ansible_distribution | lower) == 'fedora'
+
+# ----- openSUSE / SLES -----
+- name: Register Microsoft repo and import key (openSUSE)
+  shell: |
+    sudo zypper install -y libicu || true
+    sudo rpm --import \
+      "https://packages.microsoft.com/keys/microsoft.asc" || true
+    wget -q \
+      "https://packages.microsoft.com/config/opensuse/15/prod.repo" -O /tmp/prod.repo
+    sudo mv /tmp/prod.repo /etc/zypp/repos.d/microsoft-prod.repo
+    sudo chown root:root /etc/zypp/repos.d/microsoft-prod.repo
+  args:
+    warn: false
+  become: true
+  when: (ansible_distribution | lower) in ['opensuse', 'sles']
+
+- name: Install sysmonforlinux package (openSUSE/SLES)
+  package:
+    name: sysmonforlinux
+    state: present
+  become: true
+  when: (ansible_distribution | lower) in ['opensuse', 'sles']
+
+# Check if a sysmon systemd unit already exists (do not overwrite package-provided units)
+- name: Check for existing sysmon unit in /etc/systemd/system
+  stat:
+    path: /etc/systemd/system/sysmon.service
+  register: sysmon_unit_etc
+  become: true
+
+- name: Check for existing sysmon unit in /lib/systemd/system
+  stat:
+    path: /lib/systemd/system/sysmon.service
+  register: sysmon_unit_lib
+  become: true
+
+# Deploy our sysmon systemd unit only if no unit exists
+- name: Deploy sysmon systemd unit if none exists
+  template:
+    src: sysmon.service.j2
+    dest: /etc/systemd/system/sysmon.service
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Reload systemd
+  become: true
+  when: not (sysmon_unit_etc.stat.exists or sysmon_unit_lib.stat.exists)
+
+# Deploy the Sysmon configuration file (idempotent)
+- name: Deploy Sysmon XML config
+  template:
+    src: sysmon-config.xml.j2
+    dest: "{{ sysmon_config_path }}"
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart sysmon
+  become: true
+
+# Attempt to enable & start the package-provided unit. Try a couple of common names
+- name: Enable and start Sysmon service candidate
+  block:
+    - name: Enable and start candidate service '{{ item }}'
+      systemd:
+        name: "{{ item }}"
+        enabled: yes
+        state: started
+      become: true
+  loop: "{{ sysmon_service_candidates }}"
+  ignore_errors: true
+

@@ -1,0 +1,7 @@
+---
+# Handlers for rsyslog SIEM role
+- name: Restart rsyslog
+  systemd:
+    name: rsyslog
+    state: restarted
+  become: true

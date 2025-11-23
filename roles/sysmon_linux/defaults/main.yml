@@ -1,0 +1,5 @@
+---
+# Role defaults for sysmon_linux
+# These are safe defaults and can be overridden in inventory/group_vars.
+sysmon_bin_path: "/usr/bin/sysmon"
+sysmon_install_dir: "/etc/sysmon"

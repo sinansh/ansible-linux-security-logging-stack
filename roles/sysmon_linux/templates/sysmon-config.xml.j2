@@ -1,0 +1,14 @@
+<!-- Minimal Sysmon for Linux XML config
+     Customize rules for your environment. This example captures process exec and network events.
+-->
+<Sysmon schemaversion="1.0">
+  <EventFiltering>
+    <!-- Detect process start/stop -->
+    <ProcessCreate onmatch="include"/>
+
+    <!-- Detect network connections -->
+    <NetworkConnect onmatch="include"/>
+
+    <!-- Add more rules as needed -->
+  </EventFiltering>
+</Sysmon>

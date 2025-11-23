@@ -1,0 +1,8 @@
+---
+- hosts: linux_servers
+  name: Prepare Linux servers for centralized security logging
+  become: true
+  roles:
+    - sysmon_linux
+    - auditd
+    - rsyslog_siem
