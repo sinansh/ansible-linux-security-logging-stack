@@ -153,6 +153,7 @@
   notify: Restart sysmon
   become: true
 
+# Bu görev güncellendi: Hangi servisin başarılı olduğunu kaydetmek için 'register' eklendi.
 - name: Enable and start Sysmon service candidates
   loop: "{{ sysmon_service_candidates }}"
   loop_control:
@@ -161,4 +162,18 @@
     name: "{{ item }}"
     enabled: yes
     state: started
+  register: sysmon_service_status # Sonucu kaydet
+  ignore_errors: true # Beklenen bir durumdur, bir aday başarısız olabilir.
   become: true
+
+# Yeni Görev: Başarılı olan servis adını handler'lar için bir fact olarak ayarla.
+- name: Set fact for the active Sysmon service name
+  set_fact:
+    sysmon_active_service_name: "{{ item.item }}"
+  loop: "{{ sysmon_service_status.results }}"
+  # Başarısız olmayan ve aday listesinde yer alan ilk ismi bul.
+  when:
+    - not item.failed
+    - item.item in sysmon_service_candidates
+  run_once: true
+  become: false

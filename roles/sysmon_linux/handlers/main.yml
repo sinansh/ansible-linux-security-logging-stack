@@ -8,7 +8,8 @@
 
 - name: Restart sysmon
   systemd:
-    name: "{{ sysmon_service_name | default('sysmon') }}"
+    # Güvenilirlik için yeni fact değişkeni kullanılır, belirlenemezse 'sysmon'a geri döner.
+    name: "{{ sysmon_active_service_name | default('sysmon') }}"
     state: restarted
     enabled: yes
   become: true
