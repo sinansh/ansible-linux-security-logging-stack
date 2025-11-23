@@ -1,68 +1,33 @@
-#### rsyslog configuration to forward ONLY Sysmon and audit logs to a remote SIEM
-#### This template uses imfile to ingest file-based logs and then forwards only those streams.
+#### Minimal rsyslog config to forward ONLY Sysmon and auditd logs to SIEM
 
-module(load="imfile")
+#### JSON output template for SIEM ingestion
+template(name="SiemJsonFmt" type="string"
+         string='{"@timestamp":"%TIMESTAMP:::date-rfc3339%","host":"%HOSTNAME%","program":"%programname%","message":%msg:::json%}\n')
 
-#### Watch the audit log file and tag messages with "auditd"
-input(type="imfile"
-      File="{{ audit_log_path }}"
-      Tag="auditd:"
-      Severity="info"
-      PersistStateInterval="200")
-
-#### Watch the Sysmon log file (ensure sysmon writes here) and tag messages with "sysmon"
-input(type="imfile"
-      File="{{ sysmon_log_path }}"
-      Tag="sysmon:"
-      Severity="info"
-      PersistStateInterval="200")
-
-#### Watch auth logs (Debian family uses /var/log/auth.log; RHEL family uses /var/log/secure)
-{% if (ansible_facts is defined) and (ansible_facts['os_family'] == 'Debian') %}
-input(type="imfile"
-    File="/var/log/auth.log"
-    Tag="authlog:"
-    Severity="info"
-    PersistStateInterval="200"
-    Ruleset="AuthFilter")
-{% else %}
-input(type="imfile"
-    File="/var/log/secure"
-    Tag="authlog:"
-    Severity="info"
-    PersistStateInterval="200"
-    Ruleset="AuthFilter")
-{% endif %}
-
-#### Template to format forwarded messages as JSON
-#### Uses rsyslog's JSON escape for the message field. This provides a single
-#### structured envelope for both Sysmon (XML body) and auditd (text) logs.
-template(name="SiemJsonFmt" type="string" string='{"@timestamp":"%TIMESTAMP:::date-rfc3339%","host":"%HOSTNAME%","tag":"%syslogtag%","message":%msg:::json%}\n')
-
-#### Restrict forwarding: only messages with tag auditd: or sysmon:
-if ($syslogtag startswith "auditd:") then {
-    action(type="omfwd" target="{{ siem_host }}" port="{{ siem_port }}" protocol="{{ siem_protocol }}" template="SiemJsonFmt")
+#### Forward auditd logs
+if ($programname == "auditd") then {
+    action(
+        type="omfwd"
+        target="{{ siem_host }}"
+        port="{{ siem_port }}"
+        protocol="{{ siem_protocol }}"
+        template="SiemJsonFmt"
+    )
     stop
 }
 
-if ($syslogtag startswith "sysmon:") then {
-    action(type="omfwd" target="{{ siem_host }}" port="{{ siem_port }}" protocol="{{ siem_protocol }}" template="SiemJsonFmt")
+#### Forward Sysmon for Linux logs
+#### NOTE: program name may appear as:
+#### - "sysmon"
+#### - "sysmonforlinux"
+#### You can check via: journalctl -u sysmon -o cat | head
+if ($programname == "sysmon" or $programname == "sysmonforlinux") then {
+    action(
+        type="omfwd"
+        target="{{ siem_host }}"
+        port="{{ siem_port }}"
+        protocol="{{ siem_protocol }}"
+        template="SiemJsonFmt"
+    )
     stop
 }
-
-#### Ruleset to filter and forward only important auth events
-ruleset(name="AuthFilter") {
-    if ($msg contains "Failed password" \
-        or $msg contains "authentication failure" \
-        or $msg contains "Invalid user" \
-        or $msg contains "Failed publickey" \
-        or $msg contains "session closed for user" \
-        or $msg contains "Accepted password") then {
-        action(type="omfwd" target="{{ siem_host }}" port="{{ siem_port }}" protocol="{{ siem_protocol }}" template="SiemJsonFmt")
-        stop
-    }
-    stop
-}
-
-#### Drop other messages from being forwarded by this config
-& stop

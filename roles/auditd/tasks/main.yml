@@ -1,24 +1,26 @@
-# Install and configure auditd
-# This role installs `auditd`, deploys rules, and ensures the service is running.
-- name: Install auditd package
+---
+# roles/auditd/tasks/main.yml
+
+- name: Install auditd
   package:
     name: auditd
     state: present
   become: true
 
-- name: Deploy audit rules for SIEM
+- name: Ensure auditd service is enabled and running
+  systemd:
+    name: auditd
+    enabled: yes
+    state: started
+  become: true
+
+- name: Deploy audit rules file
   template:
     src: audit.rules.j2
     dest: "{{ audit_rules_path }}"
     owner: root
     group: root
     mode: '0640'
-  notify: Reload auditd rules
-  become: true
-
-- name: Ensure auditd is enabled and running
-  systemd:
-    name: auditd
-    enabled: true
-    state: started
+  notify:
+    - Reload audit rules
   become: true

@@ -1,14 +1,13 @@
-# Handler: Reload auditd rules (run augenrules if present, restart auditd)
-- name: Reload auditd rules
-  block:
-    - name: Run augenrules if available
-      command: augenrules
-      register: augenrules_run
-      failed_when: false
-      changed_when: augenrules_run.rc == 0
+---
+# roles/auditd/handlers/main.yml
 
-    - name: Restart auditd service
-      systemd:
-        name: auditd
-        state: restarted
+- name: Reload audit rules
+  command: augenrules --load
+  become: true
+  notify: Restart auditd
+
+- name: Restart auditd
+  systemd:
+    name: auditd
+    state: restarted
   become: true

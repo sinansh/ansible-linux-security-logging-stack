@@ -4,7 +4,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart={{ sysmon_bin_path }} -c {{ sysmon_install_dir }}/sysmon-config.xml
+ExecStart={{ sysmon_bin_path }} -c {{ sysmon_config_path }}
 Restart=on-failure
 User=root
 Group=root

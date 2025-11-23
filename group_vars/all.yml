@@ -1,26 +1,17 @@
 # Global variables for the security logging stack
-# Set these in inventory or a vault for production.
 
+# SIEM destination
 siem_host: "siem.example.local"
 siem_port: 514
 siem_protocol: "tcp"
 
-# Sysmon for Linux runtime and config paths
-sysmon_log_path: "/var/log/sysmon/sysmon.log"
+# Sysmon config path
 sysmon_config_path: "/etc/sysmon/sysmon-config.xml"
 
-# Candidate service names to try enabling (package may register different unit name)
+# Candidate service names (depending on distribution)
 sysmon_service_candidates:
   - sysmon
   - sysmonforlinux
 
-# auditd paths
+# Audit rules path
 audit_rules_path: "/etc/audit/rules.d/99-siem.rules"
-audit_log_path: "/var/log/audit/audit.log"
-
-# rsyslog config path for SIEM forwarding
-rsyslog_siem_conf: "/etc/rsyslog.d/90-siem.conf"
-
-# Package manager - usually autodetected, but can be overridden
-# valid values: auto, apt, yum, dnf, pacman
-pkg_mgr: "auto"

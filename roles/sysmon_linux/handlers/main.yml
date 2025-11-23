@@ -1,25 +1,14 @@
 ---
-# Handlers for Sysmon role
+# Handlers for Sysmon for Linux role
+
 - name: Reload systemd
-  command: systemctl daemon-reload
+  systemd:
+    daemon_reload: yes
   become: true
 
 - name: Restart sysmon
-  block:
-    - name: Restart candidate '{{ item }}' if present
-      systemd:
-        name: "{{ item }}"
-        state: restarted
-      become: true
-      ignore_errors: true
-  loop: "{{ sysmon_service_candidates }}"
-
-- name: Restart sysmon candidate services
-  block:
-    - name: Restart candidate '{{ item }}' if present
-      systemd:
-        name: "{{ item }}"
-        state: restarted
-      become: true
-      ignore_errors: true
-  loop: "{{ sysmon_service_candidates }}"
+  systemd:
+    name: "{{ sysmon_service_name | default('sysmon') }}"
+    state: restarted
+    enabled: yes
+  become: true

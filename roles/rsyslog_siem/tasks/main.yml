@@ -1,41 +1,25 @@
--
+---
+# Install and configure rsyslog for forwarding Sysmon and auditd logs
+
 - name: Install rsyslog
   package:
     name: rsyslog
     state: present
   become: true
-- name: Ensure rsyslog imfile module is enabled (Debian/RedHat typically load it by default)
-  ---
-  # Rsyslog SIEM tasks
-  - name: Install rsyslog
-    package:
-      name: rsyslog
-      state: present
-    become: true
 
-  - name: Ensure rsyslog imfile module is enabled
-    lineinfile:
-      path: /etc/rsyslog.conf
-      regexp: "^\\$ModLoad imfile"
-      line: '$ModLoad imfile'
-      state: present
-    notify: Restart rsyslog
-    become: true
-    when: ansible_facts['os_family'] is defined
+- name: Deploy rsyslog SIEM forwarding config
+  template:
+    src: rsyslog-siem.conf.j2
+    dest: /etc/rsyslog.d/99-siem.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart rsyslog
+  become: true
 
-  - name: Deploy rsyslog SIEM forwarding configuration
-    template:
-      src: rsyslog-siem.conf.j2
-      dest: "{{ rsyslog_siem_conf }}"
-      owner: root
-      group: root
-      mode: '0644'
-    notify: Restart rsyslog
-    become: true
-
-  - name: Ensure rsyslog is enabled and running
-    systemd:
-      name: rsyslog
-      enabled: yes
-      state: started
-    become: true
+- name: Ensure rsyslog is enabled and started
+  systemd:
+    name: rsyslog
+    enabled: yes
+    state: started
+  become: true
