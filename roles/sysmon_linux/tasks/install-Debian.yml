@@ -1,0 +1,32 @@
+---
+- name: Install prerequisites (Debian/Ubuntu)
+  apt:
+    name: 
+      - wget
+      - apt-transport-https
+      - software-properties-common
+    state: present
+    update_cache: yes
+  become: true
+
+- name: Download Microsoft GPG Key (Debian/Ubuntu)
+  get_url:
+    url: "https://packages.microsoft.com/config/{{ ansible_distribution | lower }}/{{ ansible_distribution_version }}/packages-microsoft-prod.deb"
+    dest: /tmp/packages-microsoft-prod.deb
+  become: true
+
+- name: Install Microsoft Repository (Debian/Ubuntu)
+  apt:
+    deb: /tmp/packages-microsoft-prod.deb
+  become: true
+
+- name: Update apt cache after repo add
+  apt:
+    update_cache: yes
+  become: true
+
+- name: Install SysmonForLinux Package
+  apt:
+    name: sysmonforlinux
+    state: latest
+  become: true

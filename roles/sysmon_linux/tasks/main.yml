@@ -1,7 +1,21 @@
 ---
-# Install SysmonForLinux using the official Microsoft packages
+# 1. OS'e uygun kurulum dosyasını çağır
+- name: Include OS-specific installation tasks
+  include_tasks: "install-{{ ansible_facts['os_family'] }}.yml"
 
-- name: Ensure directory for sysmon config exists
+# 2. SERVİS DOSYASINI TEMPLATE'DEN OLUŞTUR
+- name: Deploy custom Sysmon systemd unit from template
+  template:
+    src: sysmon.service.j2
+    dest: /etc/systemd/system/sysmon.service
+    owner: root
+    group: root
+    mode: '0644'
+  become: true
+  notify: Reload systemd
+
+# 3. Config dosyasını gönder
+- name: Ensure Sysmon config directory exists
   file:
     path: "{{ sysmon_config_path | dirname }}"
     state: directory
@@ -10,139 +24,6 @@
     mode: '0755'
   become: true
 
-# ----- Debian / Ubuntu -----
-- name: Register Microsoft package feed (Ubuntu)
-  shell: |
-    if [ ! -f /etc/apt/sources.list.d/microsoft-prod.list ]; then
-      wget -q "https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb" \
-        -O /tmp/packages-microsoft-prod.deb
-      dpkg -i /tmp/packages-microsoft-prod.deb
-    fi
-  args:
-    warn: false
-  become: true
-  when:
-    - ansible_facts['os_family'] == 'Debian'
-    - (ansible_distribution | lower) == 'ubuntu'
-
-- name: Register Microsoft package feed (Debian)
-  shell: |
-    if [ ! -f /etc/apt/sources.list.d/microsoft-prod.list ]; then
-      wget -q "https://packages.microsoft.com/config/debian/$(. /etc/os-release && echo ${VERSION_ID%%.*})/packages-microsoft-prod.deb" \
-        -O /tmp/packages-microsoft-prod.deb
-      dpkg -i /tmp/packages-microsoft-prod.deb
-    fi
-  args:
-    warn: false
-  become: true
-  when:
-    - ansible_facts['os_family'] == 'Debian'
-    - (ansible_distribution | lower) == 'debian'
-
-- name: Update apt cache
-  apt:
-    update_cache: yes
-  become: true
-  when:
-    ansible_facts['os_family'] == 'Debian'
-
-- name: Install sysmonforlinux package (Debian/Ubuntu)
-  package:
-    name: sysmonforlinux
-    state: present
-  become: true
-  when:
-    ansible_facts['os_family'] == 'Debian'
-
-# ----- RHEL / CentOS -----
-- name: Register Microsoft package feed (RHEL/CentOS)
-  shell: |
-    if ! rpm -q packages-microsoft-prod >/dev/null 2>&1; then
-      rpm -Uvh "https://packages.microsoft.com/config/rhel/$(. /etc/os-release && echo ${VERSION_ID%%.*})/packages-microsoft-prod.rpm"
-    fi
-  args:
-    warn: false
-  become: true
-  when:
-    - ansible_facts['os_family'] == 'RedHat'
-    - (ansible_distribution | lower) not in ['fedora']
-
-- name: Install sysmonforlinux package (RHEL/CentOS)
-  package:
-    name: sysmonforlinux
-    state: present
-  become: true
-  when:
-    ansible_facts['os_family'] == 'RedHat'
-
-# ----- Fedora -----
-- name: Register Microsoft package feed (Fedora)
-  shell: |
-    if ! rpm -q packages-microsoft-prod >/dev/null 2>&1; then
-      rpm -Uvh "https://packages.microsoft.com/config/fedora/$(rpm -E %fedora)/packages-microsoft-prod.rpm"
-    fi
-  args:
-    warn: false
-  become: true
-  when:
-    (ansible_distribution | lower) == 'fedora'
-
-- name: Install sysmonforlinux package (Fedora)
-  package:
-    name: sysmonforlinux
-    state: present
-  become: true
-  when:
-    (ansible_distribution | lower) == 'fedora'
-
-# ----- openSUSE / SLES -----
-- name: Register Microsoft repo and import key (openSUSE/SLES)
-  shell: |
-    zypper install -y libicu || true
-    rpm --import "https://packages.microsoft.com/keys/microsoft.asc" || true
-    if [ ! -f /etc/zypp/repos.d/microsoft-prod.repo ]; then
-      wget -q "https://packages.microsoft.com/config/opensuse/15/prod.repo" -O /tmp/prod.repo
-      mv /tmp/prod.repo /etc/zypp/repos.d/microsoft-prod.repo
-      chown root:root /etc/zypp/repos.d/microsoft-prod.repo
-    fi
-  args:
-    warn: false
-  become: true
-  when:
-    (ansible_distribution | lower) in ['opensuse','sles']
-
-- name: Install sysmonforlinux package (openSUSE/SLES)
-  package:
-    name: sysmonforlinux
-    state: present
-  become: true
-  when:
-    (ansible_distribution | lower) in ['opensuse','sles']
-
-# ----- Systemd unit handling -----
-- name: Check for existing sysmon unit in /etc/systemd/system
-  stat:
-    path: /etc/systemd/system/sysmon.service
-  register: sysmon_unit_etc
-  become: true
-
-- name: Check for existing sysmon unit in /lib/systemd/system
-  stat:
-    path: /lib/systemd/system/sysmon.service
-  register: sysmon_unit_lib
-  become: true
-
-- name: Deploy sysmon systemd unit if none exists
-  template:
-    src: sysmon.service.j2
-    dest: /etc/systemd/system/sysmon.service
-    owner: root
-    group: root
-    mode: '0644'
-  notify: Reload systemd
-  become: true
-  when: not (sysmon_unit_etc.stat.exists or sysmon_unit_lib.stat.exists)
-
 - name: Deploy Sysmon XML config
   template:
     src: sysmon-config.xml.j2
@@ -150,30 +31,42 @@
     owner: root
     group: root
     mode: '0644'
-  notify: Restart sysmon
+  become: true
+  register: sysmon_config_file
+
+# 4. DURUM KONTROLÜ (KRİTİK ADIM)
+# Sysmon'un şu an çalışıp çalışmadığını kontrol ediyoruz.
+# Eğer çalışmıyorsa (rc != 0) veya servis bulunamadıysa, İLK KURULUM (-i) gereklidir.
+- name: Check if Sysmon service is active
+  command: systemctl is-active sysmon
+  register: sysmon_service_status
+  failed_when: false
+  changed_when: false
   become: true
 
-# Bu görev güncellendi: Hangi servisin başarılı olduğunu kaydetmek için 'register' eklendi.
-- name: Enable and start Sysmon service candidates
-  loop: "{{ sysmon_service_candidates }}"
-  loop_control:
-    label: "{{ item }}"
+# 5. İLK KURULUM (-i)
+# Servis aktif değilse, config değişmiş olsun olmasın "-i" ile kurulum yap.
+- name: Install Sysmon configuration (First Time)
+  command: >
+    sysmon -i {{ sysmon_config_path }} -accepteula
+  become: true
+  when: sysmon_service_status.rc != 0
+
+# 6. GÜNCELLEME (-c)
+# Servis ZATEN aktifse VE config dosyası değiştiyse "-c" ile güncelle.
+- name: Update Sysmon configuration (Config Change)
+  command: >
+    sysmon -c {{ sysmon_config_path }}
+  become: true
+  when: 
+    - sysmon_service_status.rc == 0
+    - sysmon_config_file.changed
+
+# 7. Servisi Başlat ve Etkinleştir
+- name: Ensure sysmon service is started and enabled
   systemd:
-    name: "{{ item }}"
-    enabled: yes
+    name: sysmon
     state: started
-  register: sysmon_service_status # Sonucu kaydet
-  ignore_errors: true # Beklenen bir durumdur, bir aday başarısız olabilir.
+    enabled: yes
+    daemon_reload: yes
   become: true
-
-# Yeni Görev: Başarılı olan servis adını handler'lar için bir fact olarak ayarla.
-- name: Set fact for the active Sysmon service name
-  set_fact:
-    sysmon_active_service_name: "{{ item.item }}"
-  loop: "{{ sysmon_service_status.results }}"
-  # Başarısız olmayan ve aday listesinde yer alan ilk ismi bul.
-  when:
-    - not item.failed
-    - item.item in sysmon_service_candidates
-  run_once: true
-  become: false

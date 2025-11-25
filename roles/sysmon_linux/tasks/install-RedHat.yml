@@ -1,0 +1,16 @@
+---
+- name: Register Microsoft Repository (RHEL/CentOS)
+  yum_repository:
+    name: packages-microsoft-prod
+    description: Microsoft Packages for Linux
+    baseurl: "https://packages.microsoft.com/rhel/{{ ansible_distribution_major_version }}/prod/"
+    enabled: yes
+    gpgcheck: yes
+    gpgkey: https://packages.microsoft.com/keys/microsoft.asc
+  become: true
+
+- name: Install SysmonForLinux Package
+  yum:
+    name: sysmonforlinux
+    state: latest
+  become: true

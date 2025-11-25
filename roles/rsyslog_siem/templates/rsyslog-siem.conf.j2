@@ -1,48 +1,43 @@
-#### Minimal rsyslog config to forward ONLY Sysmon and auditd logs to SIEM
-
-# Load the imfile module to read the audit.log file directly
+# 1. GEREKLİ MODÜLLERİ YÜKLE
+# Dosya okumak için (audit.log)
 module(load="imfile")
 
-#### JSON output template for SIEM ingestion
-template(name="SiemJsonFmt" type="string"
-         string='{"@timestamp":"%TIMESTAMP:::date-rfc3339%","host":"%HOSTNAME%","program":"%programname%","message":%msg:::json%}\n')
+# NOT: imuxsock (sistem logları) genellikle rsyslog.conf ana dosyasında yüklüdür.
+# Eğer yüklenmediyse hata almamak için şu satırın başındaki # işaretini kaldırın:
+# module(load="imuxsock")
 
-# Define a dedicated ruleset for Auditd logs
-ruleset(name="AuditdRuleset") {
-    # Forward Auditd logs to SIEM using the SIEM JSON template
+# 2. GÖNDERİM KURALI (Ruleset)
+# Tekrarı önlemek için forwarding işlemini bir kural seti içine alıyoruz.
+ruleset(name="SendToSIEM") {
     action(
         type="omfwd"
         target="{{ siem_host }}"
         port="{{ siem_port }}"
         protocol="{{ siem_protocol }}"
-        template="SiemJsonFmt"
+        # RSYSLOG_ForwardFormat: Standart, yüksek hassasiyetli zaman damgası içeren formattır.
+        # SIEM tarafı bunu rahatlıkla parse eder.
+        template="RSYSLOG_ForwardFormat"
+        
+        # Bağlantı koparsa logları kaybetmemek için disk kuyruğu (Opsiyonel ama önerilir)
+        queue.type="LinkedList"
+        queue.filename="siem_queue"
+        queue.maxdiskspace="1g"
+        queue.saveonshutdown="on"
+        action.resumeRetryCount="-1"
     )
-    stop # Stop processing this message after forwarding
+    stop # Log gönderildikten sonra yerel log dosyalarına yazılmasını engeller
 }
 
-# Input for Auditd log file using imfile
-# Reads from the standard audit log path
+# 3. AUDITD LOGLARINI OKU VE GÖNDER
 input(type="imfile"
       File="/var/log/audit/audit.log"
-      Tag="auditd:"
-      StateFile="auditd-statefile" # To track position in the log file across restarts
-      Ruleset="AuditdRuleset"
-      startmsg.regex="^type=(?:SYSCALL|CWD|PATH|PROCTITLE|USER_START|USER_END|CRED_ACQ|CRED_DISP|LOGIN)"
+      Tag="auditd"
+      Ruleset="SendToSIEM" 
+      # Audit logları çok hızlı aktığı için polling interval düşürülebilir (varsayılan genelde iyidir)
 )
 
-
-#### Forward Sysmon for Linux logs
-#### NOTE: program name may appear as:
-#### - "sysmon"
-#### - "sysmonforlinux"
-#### You can check via: journalctl -u sysmon -o cat | head
-if $programname == "sysmon" or $programname == "sysmonforlinux" then {
-    action(
-        type="omfwd"
-        target="{{ siem_host }}"
-        port="{{ siem_port }}"
-        protocol="{{ siem_protocol }}"
-        template="SiemJsonFmt"
-    )
-    stop
+# 4. SYSMON LOGLARINI YAKALA VE GÖNDER
+# Sysmon zaten sistem loglarına (syslog/journal) yazar. Buradan filtreleyip alıyoruz.
+if ($programname == "sysmon" or $programname == "sysmonforlinux") then {
+    call SendToSIEM
 }

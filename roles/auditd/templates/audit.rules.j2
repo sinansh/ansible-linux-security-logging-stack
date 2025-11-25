@@ -30,12 +30,13 @@
 ####  Execution monitoring (more selective)
 ##########################################
 
-# Root commands (still high-value, but only root)
--a always,exit -F arch=b64 -F euid=0 -S execve -k root_command
--a always,exit -F arch=b32 -F euid=0 -S execve -k root_command
+# Root commands (Sysmon ProcessCreate ile zaten loglanıyor, overlap'i azaltmak için kapatıldı)
+#-a always,exit -F arch=b64 -F euid=0 -S execve -k root_command
+#-a always,exit -F arch=b32 -F euid=0 -S execve -k root_command
 
 # Optional: comment out if too noisy
 # Real users (uid >= 1000) - may be very noisy in busy systems
+# (Bunlar da Sysmon ProcessCreate ile görüleceği için kapalı bırakmak mantıklı)
 #-a always,exit -F arch=b64 -F euid>=1000 -S execve -k user_command
 #-a always,exit -F arch=b32 -F euid>=1000 -S execve -k user_command
 
@@ -103,10 +104,11 @@
 ####  Suspicious execs & commands
 ##########################################
 
--w /usr/bin/wget -p x -k suspect_activity
--w /usr/bin/curl -p x -k suspect_activity
--w /bin/nc -p x -k suspect_activity
--w /usr/bin/ssh -p x -k suspect_activity
+# Bu binary'ler Sysmon ProcessCreate ile zaten görünür, o yüzden çakışmayı azaltmak için kapatıldı
+#-w /usr/bin/wget -p x -k suspect_activity
+#-w /usr/bin/curl -p x -k suspect_activity
+#-w /bin/nc -p x -k suspect_activity
+#-w /usr/bin/ssh -p x -k suspect_activity
 
 ##########################################
 ####  Injection / Ptrace detection

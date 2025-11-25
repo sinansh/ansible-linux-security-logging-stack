@@ -1,13 +1,17 @@
 [Unit]
 Description=Sysmon for Linux
-After=network.target
+Documentation=https://github.com/microsoft/SysmonForLinux
+After=network.target syslog.service
 
 [Service]
 Type=simple
-ExecStart={{ sysmon_bin_path }} -c {{ sysmon_config_path }}
-Restart=on-failure
 User=root
 Group=root
+ExecStart=/usr/bin/sysmon
+# Reload dersen config dosyasını tekrar okur
+ExecReload=/usr/bin/sysmon -c {{ sysmon_config_path }}
+Restart=on-failure
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target

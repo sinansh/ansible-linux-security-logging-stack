@@ -1,15 +1,5 @@
 ---
-# Handlers for Sysmon for Linux role
-
 - name: Reload systemd
   systemd:
     daemon_reload: yes
-  become: true
-
-- name: Restart sysmon
-  systemd:
-    # Güvenilirlik için yeni fact değişkeni kullanılır, belirlenemezse 'sysmon'a geri döner.
-    name: "{{ sysmon_active_service_name | default('sysmon') }}"
-    state: restarted
-    enabled: yes
   become: true

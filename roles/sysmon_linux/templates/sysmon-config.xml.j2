@@ -1,7 +1,39 @@
-<!-- Sysmon for Linux minimal-but-useful configuration.
-     Tune filters for your environment to reduce noise. -->
-<Sysmon schemaversion="4.82">
+<Sysmon schemaversion="4.90">
   <EventFiltering>
+
+    <!-- Event ID 1 - ProcessCreate -->
+    <ProcessCreate onmatch="include">
+      <!-- Tüm process create event'lerini al -->
+      <Image condition="contains"></Image>
+    </ProcessCreate>
+
+    <!-- Event ID 3 - NetworkConnect -->
+    <NetworkConnect onmatch="include">
+      <!-- Tüm network bağlantılarını al -->
+      <Image condition="contains"></Image>
+    </NetworkConnect>
+
+    <!-- Event ID 5 - ProcessTerminate -->
+    <ProcessTerminate onmatch="include">
+      <Image condition="contains"></Image>
+    </ProcessTerminate>
+
+    <!-- Event ID 9 - RawAccessRead -->
+    <RawAccessRead onmatch="include">
+      <Image condition="contains"></Image>
+    </RawAccessRead>
+
+    <!-- Event ID 11 - FileCreate -->
+    <FileCreate onmatch="include">
+      <!-- Tüm dosya oluşturma olayları -->
+      <TargetFilename condition="contains"></TargetFilename>
+    </FileCreate>
+
+    <!-- Event ID 23 - FileDelete -->
+    <FileDelete onmatch="include">
+      <!-- Tüm dosya silme olayları -->
+      <TargetFilename condition="contains"></TargetFilename>
+    </FileDelete>
 
   </EventFiltering>
 </Sysmon>

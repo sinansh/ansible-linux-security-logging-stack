@@ -1,7 +1,7 @@
-# Global variables for the security logging stack
+# Inventory-local copy of global variables so they are loaded when using `-i inventory/hosts.ini`
 
 # SIEM destination
-siem_host: "siem.example.local"
+siem_host: "192.168.42.129"
 siem_port: 514
 siem_protocol: "tcp"
 
