@@ -1,9 +1,7 @@
 ---
-# 1. OS'e uygun kurulum dosyasını çağır
 - name: Include OS-specific installation tasks
   include_tasks: "install-{{ ansible_facts['os_family'] }}.yml"
 
-# 2. SERVİS DOSYASINI TEMPLATE'DEN OLUŞTUR
 - name: Deploy custom Sysmon systemd unit from template
   template:
     src: sysmon.service.j2
@@ -14,7 +12,6 @@
   become: true
   notify: Reload systemd
 
-# 3. Config dosyasını gönder
 - name: Ensure Sysmon config directory exists
   file:
     path: "{{ sysmon_config_path | dirname }}"
@@ -24,7 +21,6 @@
     mode: '0755'
   become: true
 
-- name: Deploy Sysmon XML config
   template:
     src: sysmon-config.xml.j2
     dest: "{{ sysmon_config_path }}"
@@ -34,9 +30,6 @@
   become: true
   register: sysmon_config_file
 
-# 4. DURUM KONTROLÜ (KRİTİK ADIM)
-# Sysmon'un şu an çalışıp çalışmadığını kontrol ediyoruz.
-# Eğer çalışmıyorsa (rc != 0) veya servis bulunamadıysa, İLK KURULUM (-i) gereklidir.
 - name: Check if Sysmon service is active
   command: systemctl is-active sysmon
   register: sysmon_service_status
@@ -44,16 +37,12 @@
   changed_when: false
   become: true
 
-# 5. İLK KURULUM (-i)
-# Servis aktif değilse, config değişmiş olsun olmasın "-i" ile kurulum yap.
 - name: Install Sysmon configuration (First Time)
   command: >
     sysmon -i {{ sysmon_config_path }} -accepteula
   become: true
   when: sysmon_service_status.rc != 0
 
-# 6. GÜNCELLEME (-c)
-# Servis ZATEN aktifse VE config dosyası değiştiyse "-c" ile güncelle.
 - name: Update Sysmon configuration (Config Change)
   command: >
     sysmon -c {{ sysmon_config_path }}
@@ -62,7 +51,6 @@
     - sysmon_service_status.rc == 0
     - sysmon_config_file.changed
 
-# 7. Servisi Başlat ve Etkinleştir
 - name: Ensure sysmon service is started and enabled
   systemd:
     name: sysmon

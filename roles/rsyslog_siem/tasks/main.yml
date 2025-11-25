@@ -1,21 +1,16 @@
 ---
-# 1. Paket Kurulumları
 - name: Install rsyslog
   package:
     name: rsyslog
     state: present
   become: true
 
-# Ansible'ın 'acl' modülünü kullanabilmesi için 'acl' paketinin Linux'ta kurulu olması gerekir.
 - name: Ensure ACL package is installed
   package:
     name: acl
     state: present
   become: true
 
-# 2. Yetki Düzenlemeleri (ACL)
-# Rsyslog (syslog kullanıcısı) normalde root'a ait olan /var/log/audit klasörüne giremez.
-# Bu klasöre okuma(r) ve çalıştırma/girme(x) izni veriyoruz.
 - name: Grant syslog user access to audit directory
   acl:
     path: /var/log/audit
@@ -25,14 +20,12 @@
     state: present
   become: true
 
-# Dosyanın varlığını kontrol et (Auditd henüz log yazmamış olabilir)
 - name: Check if audit.log exists
   stat:
     path: /var/log/audit/audit.log
   register: audit_log_stat
   become: true
 
-# Eğer dosya varsa, syslog kullanıcısına dosyayı okuma(r) izni ver.
 - name: Grant syslog user read access to audit.log
   acl:
     path: /var/log/audit/audit.log
@@ -43,7 +36,6 @@
   become: true
   when: audit_log_stat.stat.exists
 
-# 3. Konfigürasyon ve Servis
 - name: Deploy rsyslog SIEM forwarding config
   template:
     src: rsyslog-siem.conf.j2

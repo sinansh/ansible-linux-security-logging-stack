@@ -1,4 +1,3 @@
-# Inventory-local copy of global variables so they are loaded when using `-i inventory/hosts.ini`
 
 # SIEM destination
 siem_host: "192.168.42.129"
@@ -7,7 +6,6 @@ siem_protocol: "tcp"
 
 # Sysmon config path
 sysmon_config_path: "/etc/sysmon/sysmon-config.xml"
-sysmon_bin_path: "/opt/sysmon/sysmon"
 
 # Candidate service names (depending on distribution)
 sysmon_service_candidates:
