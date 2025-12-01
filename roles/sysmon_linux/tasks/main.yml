@@ -21,6 +21,7 @@
     mode: '0755'
   become: true
 
+- name: Deploy Sysmon configuration
   template:
     src: sysmon-config.xml.j2
     dest: "{{ sysmon_config_path }}"
@@ -41,14 +42,14 @@
   command: >
     sysmon -i {{ sysmon_config_path }} -accepteula
   become: true
-  when: sysmon_service_status.rc != 0
+  when: (sysmon_service_status.rc | default(1)) != 0
 
 - name: Update Sysmon configuration (Config Change)
   command: >
     sysmon -c {{ sysmon_config_path }}
   become: true
   when: 
-    - sysmon_service_status.rc == 0
+    - (sysmon_service_status.rc | default(1)) == 0
     - sysmon_config_file.changed
 
 - name: Ensure sysmon service is started and enabled
