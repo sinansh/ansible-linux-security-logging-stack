@@ -23,22 +23,22 @@
 -w /sbin/auditctl -p x -k audittools
 -w /sbin/auditd -p x -k audittools
 
-# Monitor access to audit logs
--w /var/log/audit/ -p wa -k audit_log_access
+# Monitor access to audit logs (Reduced noise: removed write watch on log file itself)
+# -w /var/log/audit/ -p wa -k audit_log_access
 
 ##########################################
 ####  Execution monitoring (more selective)
 ##########################################
 
-# Root commands (Sysmon ProcessCreate ile zaten loglanıyor, overlap'i azaltmak için kapatıldı)
-#-a always,exit -F arch=b64 -F euid=0 -S execve -k root_command
-#-a always,exit -F arch=b32 -F euid=0 -S execve -k root_command
+# Root commands (DEPRECATED: Handled by Sysmon ProcessCreate ID 1)
+# -a always,exit -F arch=b64 -F euid=0 -S execve -k root_command
+# -a always,exit -F arch=b32 -F euid=0 -S execve -k root_command
 
 # Optional: comment out if too noisy
 # Real users (uid >= 1000) - may be very noisy in busy systems
-# (Bunlar da Sysmon ProcessCreate ile görüleceği için kapalı bırakmak mantıklı)
-#-a always,exit -F arch=b64 -F euid>=1000 -S execve -k user_command
-#-a always,exit -F arch=b32 -F euid>=1000 -S execve -k user_command
+# (DEPRECATED: Handled by Sysmon ProcessCreate ID 1)
+# -a always,exit -F arch=b64 -F euid>=1000 -S execve -k user_command
+# -a always,exit -F arch=b32 -F euid>=1000 -S execve -k user_command
 
 ##########################################
 ####  Account and auth
@@ -105,10 +105,10 @@
 ##########################################
 
 # Bu binary'ler Sysmon ProcessCreate ile zaten görünür, o yüzden çakışmayı azaltmak için kapatıldı
-#-w /usr/bin/wget -p x -k suspect_activity
-#-w /usr/bin/curl -p x -k suspect_activity
-#-w /bin/nc -p x -k suspect_activity
-#-w /usr/bin/ssh -p x -k suspect_activity
+# -w /usr/bin/wget -p x -k suspect_activity
+# -w /usr/bin/curl -p x -k suspect_activity
+# -w /bin/nc -p x -k suspect_activity
+# -w /usr/bin/ssh -p x -k suspect_activity
 
 ##########################################
 ####  Injection / Ptrace detection
@@ -121,17 +121,17 @@
 ####  Package, systemd, cron, fstab
 ##########################################
 
-# Debian/Ubuntu package tools and logs
--w /usr/bin/dpkg -p x -k pkg_management
--w /usr/bin/apt-get -p x -k pkg_management
--w /usr/bin/apt -p x -k pkg_management
+# Debian/Ubuntu package tools and logs (Already covered by Sysmon ProcessCreate)
+# -w /usr/bin/dpkg -p x -k pkg_management
+# -w /usr/bin/apt-get -p x -k pkg_management
+# -w /usr/bin/apt -p x -k pkg_management
 -w /var/log/dpkg.log -p wa -k pkg_logs
 -w /var/log/apt/history.log -p wa -k pkg_logs
 
-# RPM-based package tools and logs
--w /usr/bin/rpm -p x -k pkg_management
--w /usr/bin/yum -p x -k pkg_management
--w /usr/bin/dnf -p x -k pkg_management
+# RPM-based package tools and logs (Already covered by Sysmon ProcessCreate)
+# -w /usr/bin/rpm -p x -k pkg_management
+# -w /usr/bin/yum -p x -k pkg_management
+# -w /usr/bin/dnf -p x -k pkg_management
 -w /var/log/yum.log -p wa -k pkg_logs
 
 -w /etc/systemd/system/ -p wa -k systemd_unit_changes

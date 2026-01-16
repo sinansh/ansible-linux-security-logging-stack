@@ -36,12 +36,22 @@
     - Reload audit rules
   become: true
 
+- name: Check for auditd/audisp syslog plugin configuration
+  stat:
+    path: /etc/audit/plugins.d/syslog.conf
+  register: audit_syslog_new_path
+
+- name: Set auditd syslog plugin path variable
+  set_fact:
+    audit_syslog_conf_path: "{{ '/etc/audit/plugins.d/syslog.conf' if audit_syslog_new_path.stat.exists else '/etc/audisp/plugins.d/syslog.conf' }}"
+
 - name: Disable audispd syslog plugin to prevent log duplication
   ini_file:
-    path: /etc/audisp/plugins.d/syslog.conf
+    path: "{{ audit_syslog_conf_path }}"
     section: null
     option: active
     value: 'no'
     mode: '0644'
   become: true
   notify: Restart auditd
+  ignore_errors: true # In case file doesn't exist at all (rare, but safe)

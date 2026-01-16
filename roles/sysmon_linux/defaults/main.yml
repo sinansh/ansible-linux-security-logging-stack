@@ -1,0 +1,5 @@
+---
+# Defaults for sysmon_linux
+
+# Package URLs can be overridden if hosting internally
+sysmon_config_path: "/etc/sysmon/sysmon-config.xml"

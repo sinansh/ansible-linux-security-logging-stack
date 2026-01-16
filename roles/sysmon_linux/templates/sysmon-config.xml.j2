@@ -2,37 +2,59 @@
   <EventFiltering>
 
     <!-- Event ID 1 - ProcessCreate -->
-    <ProcessCreate onmatch="include">
-      <!-- Tüm process create event'lerini al -->
-      <Image condition="contains"></Image>
+    <ProcessCreate onmatch="exclude">
+      <!-- Exclude noisy system processes -->
+      <Image condition="end with">/usr/sbin/cron</Image>
+      <Image condition="end with">/usr/sbin/crond</Image>
+      <Image condition="end with">/usr/bin/monit</Image>
+      <Image condition="end with">/opt/splunkforwarder/bin/splunkd</Image>
+      <Image condition="end with">/usr/lib/systemd/systemd-journald</Image>
+      <Image condition="end with">/usr/bin/dbus-daemon</Image>
+      <CommandLine condition="contains">ansible-playbook</CommandLine>
     </ProcessCreate>
 
     <!-- Event ID 3 - NetworkConnect -->
-    <NetworkConnect onmatch="include">
-      <!-- Tüm network bağlantılarını al -->
-      <Image condition="contains"></Image>
+    <NetworkConnect onmatch="exclude">
+      <!-- Exclude loopback traffic -->
+      <SourceIp condition="is">127.0.0.1</SourceIp>
+      <SourceIp condition="is">::1</SourceIp>
+      <DestinationIp condition="is">127.0.0.1</DestinationIp>
+      <DestinationIp condition="is">::1</DestinationIp>
+      <!-- Exclude monitoring/Splunk ports if known, otherwise keep it clean -->
     </NetworkConnect>
 
     <!-- Event ID 5 - ProcessTerminate -->
     <ProcessTerminate onmatch="include">
-      <Image condition="contains"></Image>
+      <!-- Generally low value unless debugging. Empty include means log nothing by default if onmatch=include? 
+           Wait, Sysmon for Linux behavior: matching nothing in include means capturing nothing. 
+           Keeping it empty effectively disables it, which is good for low EPS. -->
     </ProcessTerminate>
 
     <!-- Event ID 9 - RawAccessRead -->
     <RawAccessRead onmatch="include">
-      <Image condition="contains"></Image>
+      <!-- High volume, rarely useful on Linux compared to Windows. Keep disabled. -->
     </RawAccessRead>
 
     <!-- Event ID 11 - FileCreate -->
     <FileCreate onmatch="include">
-      <!-- Tüm dosya oluşturma olayları -->
-      <TargetFilename condition="contains"></TargetFilename>
+      <!-- Only monitor critical directories -->
+      <TargetFilename condition="begin with">/etc/</TargetFilename>
+      <TargetFilename condition="begin with">/boot/</TargetFilename>
+      <TargetFilename condition="begin with">/usr/local/bin/</TargetFilename>
+      <TargetFilename condition="begin with">/usr/bin/</TargetFilename>
+      <TargetFilename condition="begin with">/usr/sbin/</TargetFilename>
+      <!-- Look for scripts/webshells in webdirs (example) -->
+      <TargetFilename condition="contains">/var/www/</TargetFilename>
     </FileCreate>
 
     <!-- Event ID 23 - FileDelete -->
     <FileDelete onmatch="include">
-      <!-- Tüm dosya silme olayları -->
-      <TargetFilename condition="contains"></TargetFilename>
+      <!-- Similar strategy to FileCreate -->
+      <TargetFilename condition="begin with">/etc/</TargetFilename>
+      <TargetFilename condition="begin with">/boot/</TargetFilename>
+      <TargetFilename condition="contains">/var/www/</TargetFilename>
+      <!-- Monitor deletion of logs -->
+      <TargetFilename condition="contains">/var/log/</TargetFilename>
     </FileDelete>
 
   </EventFiltering>

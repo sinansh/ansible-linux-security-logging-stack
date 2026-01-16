@@ -17,12 +17,12 @@ Based on the applied configurations, the following events are captured:
 ### 1. Sysmon for Linux (Operational Visibility)
 | Event ID | Name | Description |
 | :--- | :--- | :--- |
-| **1** | Process Create | Logs every process started (Command line, hashes, parent process). |
-| **3** | Network Connect | Logs all outbound/inbound network connections. |
-| **5** | Process Terminate | Logs when a process ends. |
-| **9** | RawAccessRead | Detects direct read operations on drive volumes (anti-forensics/wipers). |
-| **11** | File Create | Logs all file creation events globally. |
-| **23** | File Delete | Logs all file deletion events globally. |
+| **1** | Process Create | Logs process starts. **Optimized:** Excludes noisy system processes (cron, monit, splunkd). |
+| **3** | Network Connect | Logs network connections. **Optimized:** Excludes localhost/loopback traffic. |
+| **5** | Process Terminate | (Disabled/Empty) Low value for general monitoring. |
+| **9** | RawAccessRead | (Disabled) High noise volume. |
+| **11** | File Create | Logs file creation in **critical paths only** (/etc, /boot, /bin, /var/www). |
+| **23** | File Delete | Logs file deletion in **critical paths only** (/etc, /boot, /var/log). |
 
 ### 2. Auditd (Compliance & Integrity)
 Specific rules are configured to detect changes in critical system areas. Note that standard process execution (`execve`) logging is **disabled** in Auditd to avoid overlap with Sysmon Event ID 1.

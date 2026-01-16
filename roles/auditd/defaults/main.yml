@@ -1,0 +1,13 @@
+---
+# Defaults for auditd
+
+# Path to audit.rules file
+# Debian/Ubuntu: /etc/audit/rules.d/audit.rules (often merged) or /etc/audit/audit.rules
+# RHEL/CentOS: /etc/audit/rules.d/audit.rules
+audit_rules_path: "/etc/audit/rules.d/audit.rules"
+
+# Buffer size for audit messages
+auditd_buffer_size: 8192
+
+# Failure mode (0=silent, 1=printk, 2=panic)
+auditd_failure_mode: 1

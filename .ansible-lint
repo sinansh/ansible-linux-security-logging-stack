@@ -1,0 +1,11 @@
+---
+# .ansible-lint configuration
+profile: production
+exclude_paths:
+  - .github/
+  - .git/
+warn_list:
+  - experimental
+  - 204  # Lines should be no longer than 160 chars
+skip_list:
+  - 403  # Package installs should not use latest (we use latest for agents)

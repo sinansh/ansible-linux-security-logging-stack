@@ -1,0 +1,11 @@
+---
+# Defaults for rsyslog_siem
+
+# SIEM Connection Details
+siem_host: "127.0.0.1"
+siem_port: 514
+siem_protocol: "udp"
+
+# Queue Configuration
+rsyslog_queue_enabled: true
+rsyslog_queue_maxchk: "1g"
