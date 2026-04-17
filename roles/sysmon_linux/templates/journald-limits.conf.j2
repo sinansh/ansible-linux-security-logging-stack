@@ -1,9 +1,0 @@
-[Journal]
-# Kalıcı journal için toplam disk limiti
-SystemMaxUse={{ journald_system_max_use }}
-# Geçici (RAM) journal için limit
-RuntimeMaxUse=100M
-# Bu süreyi geçen loglar otomatik silinir
-MaxRetentionSec={{ journald_max_retention_sec }}
-# Tek seferlik yükleme boyutu — büyük burst'leri kırpar
-MaxFileSec=1day

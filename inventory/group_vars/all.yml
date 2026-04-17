@@ -17,3 +17,8 @@ sysmon_service_candidates:
 
 # Audit rules path
 audit_rules_path: "/etc/audit/rules.d/99-siem.rules"
+
+# Sysmon NetworkConnect exclusion IP listesi
+# Zabbix, monitoring vb. araçların hedef IP'lerini buraya ekle
+sysmon_excluded_destination_ips:
+  - "192.168.42.129"

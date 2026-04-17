@@ -31,29 +31,6 @@
     mode: '0644'
   become: true
 
-- name: Ensure journald drop-in directory exists
-  file:
-    path: /etc/systemd/journald.conf.d
-    state: directory
-    owner: root
-    group: root
-    mode: '0755'
-  become: true
-
-- name: Deploy journald size and retention limits
-  template:
-    src: journald-limits.conf.j2
-    dest: /etc/systemd/journald.conf.d/99-size-limits.conf
-    owner: root
-    group: root
-    mode: '0644'
-  become: true
-  notify: Restart journald
-
-- name: Vacuum journal to enforce new size limits immediately
-  command: journalctl --vacuum-size={{ journald_system_max_use }} --vacuum-time={{ journald_max_retention_sec }}
-  become: true
-  changed_when: false
 
 - name: Deploy custom Sysmon systemd unit from template
   template:
