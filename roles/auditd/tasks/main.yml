@@ -1,6 +1,4 @@
 ---
-# roles/auditd/tasks/main.yml
-
 - name: Install auditd
   package:
     name: auditd
@@ -14,15 +12,7 @@
     owner: root
     group: root
     mode: '0640'
-  # Yapılandırma dosyası değiştiğinde Auditd'yi yeniden başlat
   notify: Restart auditd
-  become: true
-
-- name: Ensure auditd service is enabled and running
-  systemd:
-    name: auditd
-    enabled: yes
-    state: started
   become: true
 
 - name: Deploy audit rules file
@@ -32,18 +22,39 @@
     owner: root
     group: root
     mode: '0640'
-  notify:
-    - Reload audit rules
+  notify: Reload audit rules
   become: true
 
-- name: Check for auditd/audisp syslog plugin configuration
+# Servis kurallar deploy edildikten SONRA başlatılır —
+# ilk çalıştırmada auditd boş kural setiyle kısa süre çalışmaz.
+- name: Ensure auditd service is enabled and running
+  systemd:
+    name: auditd
+    enabled: true
+    state: started
+  become: true
+
+# ── Audispd syslog plugin: rsyslog ile çakışmayı önle ────────────────────────
+- name: Check for auditd/audisp syslog plugin (new path)
   stat:
     path: /etc/audit/plugins.d/syslog.conf
   register: audit_syslog_new_path
+  become: true
+
+- name: Check for auditd/audisp syslog plugin (legacy path)
+  stat:
+    path: /etc/audisp/plugins.d/syslog.conf
+  register: audit_syslog_legacy_path
+  become: true
 
 - name: Set auditd syslog plugin path variable
   set_fact:
-    audit_syslog_conf_path: "{{ '/etc/audit/plugins.d/syslog.conf' if audit_syslog_new_path.stat.exists else '/etc/audisp/plugins.d/syslog.conf' }}"
+    audit_syslog_conf_path: >-
+      {{
+        '/etc/audit/plugins.d/syslog.conf'  if audit_syslog_new_path.stat.exists else
+        '/etc/audisp/plugins.d/syslog.conf' if audit_syslog_legacy_path.stat.exists else
+        ''
+      }}
 
 - name: Disable audispd syslog plugin to prevent log duplication
   ini_file:
@@ -54,4 +65,4 @@
     mode: '0644'
   become: true
   notify: Restart auditd
-  ignore_errors: true # In case file doesn't exist at all (rare, but safe)
+  when: audit_syslog_conf_path != ''

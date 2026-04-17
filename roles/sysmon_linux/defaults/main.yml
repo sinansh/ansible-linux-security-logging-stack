@@ -3,3 +3,18 @@
 
 # Package URLs can be overridden if hosting internally
 sysmon_config_path: "/etc/sysmon/sysmon-config.xml"
+
+# Dedicated log file (bypasses journald — prevents disk bloat)
+sysmon_log_path: "/var/log/sysmon/sysmon.log"
+
+# Logrotate: kaç günlük log tutulsun
+sysmon_log_rotate_days: 3
+
+# journald stderr rate limiting (servis başına)
+# 30 saniyede en fazla 50 satır — crash loop'larında journal şişmesini önler
+sysmon_journal_rate_interval_sec: 30
+sysmon_journal_rate_burst: 50
+
+# journald global boyut limiti (tüm sistem için güvenlik ağı)
+journald_system_max_use: "500M"
+journald_max_retention_sec: "7day"

@@ -11,6 +11,7 @@
     state: present
   become: true
 
+# ── Auditd log erişimi ──────────────────────────────────────────────────────
 - name: Grant syslog user access to audit directory
   acl:
     path: /var/log/audit
@@ -36,6 +37,41 @@
   become: true
   when: audit_log_stat.stat.exists
 
+# ── Sysmon log erişimi ──────────────────────────────────────────────────────
+# sysmon_linux rolü bu dizini ve dosyayı oluşturur; biz yalnızca ACL veriyoruz.
+- name: Check if sysmon log directory exists
+  stat:
+    path: "{{ sysmon_log_path | dirname }}"
+  register: sysmon_log_dir_stat
+  become: true
+
+- name: Grant syslog user access to sysmon log directory
+  acl:
+    path: "{{ sysmon_log_path | dirname }}"
+    entity: syslog
+    etype: user
+    permissions: rx
+    state: present
+  become: true
+  when: sysmon_log_dir_stat.stat.exists
+
+- name: Check if sysmon log file exists
+  stat:
+    path: "{{ sysmon_log_path }}"
+  register: sysmon_log_stat
+  become: true
+
+- name: Grant syslog user read access to sysmon.log
+  acl:
+    path: "{{ sysmon_log_path }}"
+    entity: syslog
+    etype: user
+    permissions: r
+    state: present
+  become: true
+  when: sysmon_log_stat.stat.exists
+
+# ── rsyslog konfigürasyonu ──────────────────────────────────────────────────
 - name: Deploy rsyslog SIEM forwarding config
   template:
     src: rsyslog-siem.conf.j2
@@ -49,6 +85,6 @@
 - name: Ensure rsyslog is enabled and started
   systemd:
     name: rsyslog
-    enabled: yes
+    enabled: true
     state: started
   become: true

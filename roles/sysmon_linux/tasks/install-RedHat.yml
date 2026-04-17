@@ -12,5 +12,5 @@
 - name: Install SysmonForLinux Package
   yum:
     name: sysmonforlinux
-    state: latest
+    state: present
   become: true

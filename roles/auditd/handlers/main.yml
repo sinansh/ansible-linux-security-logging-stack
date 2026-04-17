@@ -1,10 +1,10 @@
 ---
-# roles/auditd/handlers/main.yml
-
+# augenrules --load kuralları çalışan kernel'e yükler; restart gerekmez.
+# Restart yalnızca auditd.conf değiştiğinde gereklidir.
 - name: Reload audit rules
   command: augenrules --load
   become: true
-  notify: Restart auditd
+  changed_when: true
 
 - name: Restart auditd
   systemd:

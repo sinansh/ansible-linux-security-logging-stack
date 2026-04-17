@@ -8,10 +8,19 @@ Type=simple
 User=root
 Group=root
 ExecStart=/usr/bin/sysmon
-# Reload dersen config dosyasını tekrar okur
 ExecReload=/usr/bin/sysmon -c {{ sysmon_config_path }}
 Restart=on-failure
 RestartSec=5
+
+# Sysmon olaylarını journald yerine doğrudan dosyaya yaz.
+# Bu sayede journald şişmez; rsyslog imfile ile okuyup SIEM'e iletir.
+StandardOutput=append:{{ sysmon_log_path }}
+# Servis hataları (crash, start fail) debug için journal'da kalsın.
+# Ancak rate limit ile patlamayı önle: 30 saniyede max 50 satır.
+StandardError=journal
+SyslogIdentifier=sysmon
+LogRateLimitIntervalSec={{ sysmon_journal_rate_interval_sec }}
+LogRateLimitBurst={{ sysmon_journal_rate_burst }}
 
 [Install]
 WantedBy=multi-user.target

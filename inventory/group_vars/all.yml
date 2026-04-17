@@ -7,6 +7,9 @@ siem_protocol: "tcp"
 # Sysmon config path
 sysmon_config_path: "/etc/sysmon/sysmon-config.xml"
 
+# Sysmon dedicated log file (journald'ı bypass eder, disk şişmesini önler)
+sysmon_log_path: "/var/log/sysmon/sysmon.log"
+
 # Candidate service names (depending on distribution)
 sysmon_service_candidates:
   - sysmon

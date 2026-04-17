@@ -1,0 +1,11 @@
+{{ sysmon_log_path }} {
+    daily
+    rotate {{ sysmon_log_rotate_days }}
+    compress
+    delaycompress
+    missingok
+    notifempty
+    # copytruncate: dosyayı yeniden oluşturmak yerine truncate eder.
+    # rsyslog imfile, dosya küçüldüğünü fark ederek pozisyonu sıfırlar — servis yeniden başlatmak gerekmez.
+    copytruncate
+}

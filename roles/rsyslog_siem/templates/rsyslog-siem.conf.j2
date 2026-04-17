@@ -1,43 +1,48 @@
-# 1. GEREKLİ MODÜLLERİ YÜKLE
-# Dosya okumak için (audit.log)
+# Gerekli modüller
 module(load="imfile")
 
-# NOT: imuxsock (sistem logları) genellikle rsyslog.conf ana dosyasında yüklüdür.
-# Eğer yüklenmediyse hata almamak için şu satırın başındaki # işaretini kaldırın:
-# module(load="imuxsock")
-
-# 2. GÖNDERİM KURALI (Ruleset)
-# Tekrarı önlemek için forwarding işlemini bir kural seti içine alıyoruz.
+# ─────────────────────────────────────────────
+# GÖNDERİM KURALI (Ruleset)
+# Hem auditd hem de sysmon bu ruleset'i kullanır.
+# "stop" direktifi: iletim sonrası mesaj yerel dosyalara yazılmaz.
+# ─────────────────────────────────────────────
 ruleset(name="SendToSIEM") {
     action(
         type="omfwd"
         target="{{ siem_host }}"
         port="{{ siem_port }}"
         protocol="{{ siem_protocol }}"
-        # RSYSLOG_ForwardFormat: Standart, yüksek hassasiyetli zaman damgası içeren formattır.
-        # SIEM tarafı bunu rahatlıkla parse eder.
         template="RSYSLOG_ForwardFormat"
-        
-        # Bağlantı koparsa logları kaybetmemek için disk kuyruğu (Opsiyonel ama önerilir)
         queue.type="LinkedList"
         queue.filename="siem_queue"
         queue.maxdiskspace="1g"
         queue.saveonshutdown="on"
         action.resumeRetryCount="-1"
     )
-    stop # Log gönderildikten sonra yerel log dosyalarına yazılmasını engeller
+    stop
 }
 
-# 3. AUDITD LOGLARINI OKU VE GÖNDER
+# ─────────────────────────────────────────────
+# AUDITD LOGLARINI OKU VE GÖNDER
+# ─────────────────────────────────────────────
 input(type="imfile"
       File="/var/log/audit/audit.log"
       Tag="auditd"
-      Ruleset="SendToSIEM" 
-      # Audit logları çok hızlı aktığı için polling interval düşürülebilir (varsayılan genelde iyidir)
+      Ruleset="SendToSIEM"
+      freshStartTail="off"
 )
 
-# 4. SYSMON LOGLARINI YAKALA VE GÖNDER
-# Sysmon zaten sistem loglarına (syslog/journal) yazar. Buradan filtreleyip alıyoruz.
-if ($programname == "sysmon" or $programname == "sysmonforlinux") then {
-    call SendToSIEM
-}
+# ─────────────────────────────────────────────
+# SYSMON LOGLARINI OKU VE GÖNDER
+#
+# Sysmon servisi artık journald yerine doğrudan bu dosyaya yazar
+# (sysmon.service StandardOutput=append:{{ sysmon_log_path }}).
+# imfile ile okuyup SIEM'e iletiyoruz; "stop" sayesinde başka
+# hiçbir yerel dosyaya yazılmıyor — disk üzerinde kalıntı kalmaz.
+# ─────────────────────────────────────────────
+input(type="imfile"
+      File="{{ sysmon_log_path }}"
+      Tag="sysmon"
+      Ruleset="SendToSIEM"
+      freshStartTail="off"
+)
