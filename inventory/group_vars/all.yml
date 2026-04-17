@@ -22,3 +22,20 @@ audit_rules_path: "/etc/audit/rules.d/99-siem.rules"
 # Zabbix, monitoring vb. araçların hedef IP'lerini buraya ekle
 sysmon_excluded_destination_ips:
   - "192.168.42.129"
+
+# Sysmon NetworkConnect exclusion image listesi
+# NetworkConnect üretmesini istemediğimiz process binary path'leri
+sysmon_excluded_network_images:
+  # Zabbix
+  - "/usr/sbin/zabbix_agent2"
+  - "/usr/sbin/zabbix_agentd"
+  # Kubernetes control plane & node bileşenleri
+  - "/usr/local/bin/kube-apiserver"
+  - "/usr/local/bin/kube-controller-manager"
+  - "/usr/local/bin/kube-scheduler"
+  - "/usr/local/bin/kube-proxy"
+  - "/usr/bin/kubelet"
+  # Container runtime
+  - "/usr/bin/containerd"
+  - "/usr/local/bin/containerd"
+  - "/usr/bin/containerd-shim-runc-v2"

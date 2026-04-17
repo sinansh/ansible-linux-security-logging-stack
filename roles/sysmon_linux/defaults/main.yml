@@ -19,3 +19,7 @@ sysmon_journal_rate_burst: 50
 # Ortama göre group_vars/all.yml veya host_vars'tan override edilebilir
 sysmon_excluded_destination_ips: []
 
+# NetworkConnect exclusion: image (binary path) listesi
+# Zabbix, Kubernetes bileşenleri gibi gürültülü process'leri buraya ekle
+sysmon_excluded_network_images: []
+

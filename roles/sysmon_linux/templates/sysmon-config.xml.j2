@@ -28,9 +28,10 @@
 {% for ip in sysmon_excluded_destination_ips %}
       <DestinationIp condition="is">{{ ip }}</DestinationIp>
 {% endfor %}
-      <!-- Zabbix agent — tüm network bağlantıları izlenmeyecek -->
-      <Image condition="end with">/usr/sbin/zabbix_agent2</Image>
-      <Image condition="end with">/usr/sbin/zabbix_agentd</Image>
+      <!-- Gürültülü process'ler — tüm network bağlantıları izlenmeyecek (sysmon_excluded_network_images) -->
+{% for image in sysmon_excluded_network_images %}
+      <Image condition="end with">{{ image }}</Image>
+{% endfor %}
     </NetworkConnect>
 
     <!-- Event ID 5 - ProcessTerminate -->
