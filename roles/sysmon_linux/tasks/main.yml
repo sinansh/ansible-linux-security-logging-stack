@@ -2,46 +2,6 @@
 - name: Include OS-specific installation tasks
   include_tasks: "install-{{ ansible_facts['os_family'] }}.yml"
 
-- name: Ensure Sysmon log directory exists
-  file:
-    path: "{{ sysmon_log_path | dirname }}"
-    state: directory
-    owner: root
-    group: root
-    mode: '0750'
-  become: true
-
-- name: Ensure Sysmon log file exists with correct permissions
-  file:
-    path: "{{ sysmon_log_path }}"
-    state: touch
-    owner: root
-    group: root
-    mode: '0640'
-    modification_time: preserve
-    access_time: preserve
-  become: true
-
-- name: Deploy Sysmon logrotate configuration
-  template:
-    src: sysmon-logrotate.j2
-    dest: /etc/logrotate.d/sysmon
-    owner: root
-    group: root
-    mode: '0644'
-  become: true
-
-
-- name: Deploy custom Sysmon systemd unit from template
-  template:
-    src: sysmon.service.j2
-    dest: /etc/systemd/system/sysmon.service
-    owner: root
-    group: root
-    mode: '0644'
-  become: true
-  notify: Reload systemd
-
 - name: Ensure Sysmon config directory exists
   file:
     path: "{{ sysmon_config_path | dirname }}"
@@ -68,7 +28,13 @@
   changed_when: false
   become: true
 
-- name: Install Sysmon configuration (first-time setup)
+# 'sysmon -i' Sysmon for Linux'u DOĞRU şekilde kurar: config'i /opt/sysmon/config.xml'e
+# kopyalar, systemd birimini kendisi oluşturur
+#   (Type=forking, ExecStart=/opt/sysmon/sysmon -i /opt/sysmon/config.xml -service)
+# ve servisi başlatır. Sysmon olayları bir dosyaya/stdout'a DEĞİL, doğrudan
+# SYSLOG'a (programname/tag = "sysmon") yazılır; rsyslog_siem rolü bu tag'i
+# yakalayıp SIEM'e iletir. Bu yüzden burada özel unit / log dosyası YOK.
+- name: Install Sysmon (first-time setup)
   command: sysmon -i {{ sysmon_config_path }} -accepteula
   become: true
   when: (sysmon_service_status.rc | default(1)) != 0
@@ -82,10 +48,9 @@
     - sysmon_config_file.changed
   changed_when: true
 
-- name: Ensure Sysmon service is started and enabled
+- name: Ensure Sysmon service is enabled and started
   systemd:
     name: sysmon
     state: started
     enabled: true
-    daemon_reload: true
   become: true

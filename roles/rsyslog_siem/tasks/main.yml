@@ -5,80 +5,112 @@
     state: present
   become: true
 
-- name: Ensure ACL package is installed
-  package:
-    name: acl
-    state: present
-  become: true
+# ─────────────────────────────────────────────────────────────────────────────
+# LOG ERİŞİMİ
+# - Auditd:  imfile /var/log/audit/audit.log dosyasını okur. Okuma izni auditd'nin
+#            kendi 'log_group' direktifiyle veriliyor (bkz. auditd rolü) — Debian'da
+#            log_group=syslog → audit.log root:syslog 0640 olur, rsyslog (syslog
+#            kullanıcısı) okur. ACL kullanmıyoruz çünkü auditd dosyayı her
+#            rotasyon/restart'ta yeniden chmod ederek ACL mask'ini sıfırlıyor.
+# - Sysmon:  bir dosyaya yazmaz; olayları doğrudan SYSLOG'a (programname="sysmon")
+#            gönderir. Aşağıdaki rsyslog kuralı bu tag'i yakalayıp iletir; ekstra
+#            izin/okuma gerekmez.
+# ─────────────────────────────────────────────────────────────────────────────
 
-# ── Auditd log erişimi ──────────────────────────────────────────────────────
-- name: Grant syslog user access to audit directory
-  acl:
-    path: /var/log/audit
-    entity: syslog
-    etype: user
-    permissions: rx
-    state: present
+# ─────────────────────────────────────────────────────────────────────────────
+# SELINUX (yalnızca RHEL/CentOS, SELinux enabled)
+# CentOS 8'de SELinux enforcing'dir ve iki şeyi engeller:
+#   1) rsyslog'un (syslogd_t) SIEM'e ağ bağlantısı açmasını  → boolean ile aç.
+#   2) rsyslog'un imfile ile auditd loglarını (auditd_log_t) okumasını → küçük
+#      bir özel policy modülü ile izin ver. (RHEL'de rsyslog root'tur, DAC ile
+#      okur ama SELinux yine de reddeder.)
+# ─────────────────────────────────────────────────────────────────────────────
+- name: Configure SELinux to allow rsyslog forwarding and audit-log reads
+  when:
+    - ansible_facts['os_family'] == 'RedHat'
+    - (ansible_facts.selinux.status | default('disabled')) == 'enabled'
   become: true
+  block:
+    - name: Allow rsyslog to make outbound network connections (omfwd)
+      seboolean:
+        name: syslogd_can_network_connect
+        state: true
+        persistent: true
 
-- name: Check if audit.log exists
-  stat:
-    path: /var/log/audit/audit.log
-  register: audit_log_stat
-  become: true
+    - name: Ensure SELinux policy build tools are present
+      package:
+        name:
+          - checkpolicy
+          - policycoreutils
+        state: present
 
-- name: Grant syslog user read access to audit.log
-  acl:
-    path: /var/log/audit/audit.log
-    entity: syslog
-    etype: user
-    permissions: r
-    state: present
-  become: true
-  when: audit_log_stat.stat.exists
+    - name: Ensure local SELinux module directory exists
+      file:
+        path: /etc/selinux/local
+        state: directory
+        owner: root
+        group: root
+        mode: '0700'
 
-# ── Sysmon log erişimi ──────────────────────────────────────────────────────
-# sysmon_linux rolü bu dizini ve dosyayı oluşturur; biz yalnızca ACL veriyoruz.
-- name: Check if sysmon log directory exists
-  stat:
-    path: "{{ sysmon_log_path | dirname }}"
-  register: sysmon_log_dir_stat
-  become: true
+    - name: Deploy SELinux policy source allowing rsyslog to read audit logs
+      copy:
+        dest: /etc/selinux/local/rsyslog_read_audit.te
+        owner: root
+        group: root
+        mode: '0640'
+        content: |
+          module rsyslog_read_audit 1.0;
 
-- name: Grant syslog user access to sysmon log directory
-  acl:
-    path: "{{ sysmon_log_path | dirname }}"
-    entity: syslog
-    etype: user
-    permissions: rx
-    state: present
-  become: true
-  when: sysmon_log_dir_stat.stat.exists
+          # NOTE: rsyslog'un domain'i RHEL/CentOS'ta 'syslogd_t' (rsyslogd_t DEĞİL).
+          require {
+              type syslogd_t;
+              type auditd_log_t;
+              class dir { search open read getattr };
+              class file { open read getattr ioctl lock };
+          }
 
-- name: Check if sysmon log file exists
-  stat:
-    path: "{{ sysmon_log_path }}"
-  register: sysmon_log_stat
-  become: true
+          allow syslogd_t auditd_log_t:dir { search open read getattr };
+          allow syslogd_t auditd_log_t:file { open read getattr ioctl lock };
+      register: selinux_audit_te
 
-- name: Grant syslog user read access to sysmon.log
-  acl:
-    path: "{{ sysmon_log_path }}"
-    entity: syslog
-    etype: user
-    permissions: r
-    state: present
-  become: true
-  when: sysmon_log_stat.stat.exists
+    - name: Compile SELinux module (checkmodule)
+      command: >-
+        checkmodule -M -m
+        -o /etc/selinux/local/rsyslog_read_audit.mod
+        /etc/selinux/local/rsyslog_read_audit.te
+      when: selinux_audit_te.changed
+      changed_when: true
+
+    - name: Package SELinux module (semodule_package)
+      command: >-
+        semodule_package
+        -o /etc/selinux/local/rsyslog_read_audit.pp
+        -m /etc/selinux/local/rsyslog_read_audit.mod
+      when: selinux_audit_te.changed
+      changed_when: true
+
+    - name: Install SELinux module (semodule)
+      command: semodule -i /etc/selinux/local/rsyslog_read_audit.pp
+      when: selinux_audit_te.changed
+      changed_when: true
+      notify: Restart rsyslog
 
 # ── rsyslog konfigürasyonu ──────────────────────────────────────────────────
 - name: Deploy rsyslog SIEM forwarding config
   template:
     src: rsyslog-siem.conf.j2
-    dest: /etc/rsyslog.d/99-siem.conf
+    dest: /etc/rsyslog.d/30-siem.conf
     owner: root
     group: root
     mode: '0644'
+  notify: Restart rsyslog
+  become: true
+
+# Eski sürüm 99-siem.conf bıraktıysa (sysmon imfile içeren) temizle.
+- name: Remove legacy 99-siem.conf from previous deployments
+  file:
+    path: /etc/rsyslog.d/99-siem.conf
+    state: absent
   notify: Restart rsyslog
   become: true
 

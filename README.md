@@ -4,215 +4,125 @@ This Ansible project prepares Linux servers to forward security-focused logs (Sy
 
 ## Overview
 
-This repository contains an Ansible project that installs and configures a minimal but highly effective Linux security logging stack. The configuration is optimized to reduce noise by leveraging the strengths of each tool:
+This repository installs and configures a minimal but effective Linux security logging stack, tuned to reduce noise by leveraging the strengths of each tool:
 
-* **Sysmon for Linux:** Handles high-volume operational data (Process execution, Network connections, File operations).
-* **Auditd:** Focuses on sensitive configuration changes, persistence mechanisms, and system integrity (FIM).
-* **Rsyslog:** Forwards combined logs to a remote SIEM over TCP/UDP/RELP.
+* **Sysmon for Linux:** High-volume operational data (process execution, network connections, file operations). Sysmon emits events to the local **syslog** (program name `sysmon`, provider `Linux-Sysmon`).
+* **Auditd:** Sensitive configuration changes, persistence mechanisms, and system integrity (FIM). Written to `/var/log/audit/audit.log`.
+* **Rsyslog:** Forwards both sources to a remote SIEM over TCP/UDP — Sysmon by program name, Auditd by reading its log file with `imfile`.
+
+## Architecture / How logs reach the SIEM
+
+```
+Sysmon ──syslog(tag=sysmon)──┐
+                             ├─▶ rsyslog (30-siem.conf) ──omfwd──▶ SIEM (siem_host:siem_port)
+Auditd ──/var/log/audit/audit.log──(imfile)──┘
+```
+
+Important facts (verified in a lab):
+
+* **Sysmon for Linux does NOT write events to a file or stdout.** `sysmon -i` installs its own systemd unit
+  (`/opt/sysmon/sysmon -i /opt/sysmon/config.xml -service`) and the collector sends events to **syslog** with
+  program name `sysmon`. The role therefore does **not** deploy a custom unit or a log file — it just lets
+  `sysmon -i` manage the service, and rsyslog forwards messages where `$programname == "sysmon"`.
+* **Auditd readability:** rsyslog must read `audit.log`.
+  * **Ubuntu/Debian:** rsyslog runs as the `syslog` user. We set auditd's own `log_group = syslog` so `audit.log`
+    becomes `root:syslog 0640` and stays readable **across rotation** (ACLs are not used — auditd re-`chmod`s the
+    file on rotation and would wipe an ACL mask).
+  * **RHEL/CentOS 8:** rsyslog runs as **root** (no `syslog` user). DAC is fine, but SELinux blocks the read, so the
+    role enables `syslogd_can_network_connect` and installs a tiny custom SELinux module letting `syslogd_t` read
+    `auditd_log_t`.
+* No `StandardOutput=append:` is used, so there is **no systemd-239 problem** on CentOS 8.
 
 ## Detection Capabilities
-
-Based on the applied configurations, the following events are captured:
 
 ### 1. Sysmon for Linux (Operational Visibility)
 | Event ID | Name | Description |
 | :--- | :--- | :--- |
-| **1** | Process Create | Logs process starts. **Optimized:** Excludes noisy system processes (cron, monit, splunkd). |
-| **3** | Network Connect | Logs network connections. **Optimized:** Excludes localhost/loopback traffic. |
-| **5** | Process Terminate | (Disabled/Empty) Low value for general monitoring. |
-| **9** | RawAccessRead | (Disabled) High noise volume. |
-| **11** | File Create | Logs file creation in **critical paths only** (/etc, /boot, /bin, /var/www). |
-| **23** | File Delete | Logs file deletion in **critical paths only** (/etc, /boot, /var/log). |
+| **1** | Process Create | Logs process starts. Excludes noisy system processes (cron, monit, splunkd, nginx, dbus, journald). |
+| **3** | Network Connect | Logs network connections. Excludes loopback and configurable internal/monitoring destinations. |
+| **5** | Process Terminate | Disabled (low value, catch-all exclude). |
+| **9** | RawAccessRead | Disabled (high noise on Linux). |
+| **11** | File Create | Critical paths only (`/etc`, `/boot`, `/usr/(local/)bin`, `/usr/sbin`, `/var/www`). |
+| **23** | File Delete | Critical paths only (`/etc`, `/boot`, `/var/www`, `/var/log`). |
 
 ### 2. Auditd (Compliance & Integrity)
-Specific rules are configured to detect changes in critical system areas. Note that standard process execution (`execve`) logging is **disabled** in Auditd to avoid overlap with Sysmon Event ID 1.
+Standard process-execution (`execve`) logging is **disabled** in Auditd to avoid overlap with Sysmon Event ID 1.
 
-* **Identity & Authentication:**
-    * Modifications to `/etc/passwd`, `/etc/shadow`, `/etc/group`.
-    * Changes to Sudoers (`/etc/sudoers`, `/etc/sudoers.d`).
-    * Execution of `sudo` and `passwd` binaries.
-    * PAM configuration changes.
-* **System Integrity & Persistence:**
-    * **Kernel Modules:** Loading/Unloading (`insmod`, `rmmod`, `modprobe`).
-    * **Systemd:** Changes to unit files in `/etc/systemd/system` and `/lib/systemd/system`.
-    * **Cron:** Modifications to crontab and cron directories.
-    * **Mounts:** Execution of `mount` command and changes to `/etc/fstab`.
-* **Network Configuration:**
-    * Hostname/Domain name changes.
-    * Modifications to `/etc/hosts` and `/etc/NetworkManager`.
-* **Package Management:**
-    * Execution of `rpm`, `yum`, `dnf`, `dpkg`, `apt`.
-    * Writes to package manager logs (`dpkg.log`, `yum.log`).
-* **Suspicious Activity:**
-    * **Ptrace:** Detection of process injection attempts.
-    * **System State:** Usage of `shutdown`, `reboot`, `poweroff`.
+* **Identity & Auth:** `/etc/passwd`, `/etc/shadow`, `/etc/group`, sudoers, `sudo`/`passwd` execution, PAM.
+* **Integrity & Persistence:** kernel modules (insmod/rmmod/modprobe/kmod), systemd unit files, cron, mounts/fstab.
+* **Network config:** hostname/domain changes, `/etc/hosts`, `/etc/NetworkManager`.
+* **Package management:** writes to `dpkg.log`, `apt/history.log`, `yum.log`.
+* **Suspicious activity:** `ptrace` (injection), `shutdown`/`reboot`/`poweroff`.
 
 ## Quick Start
 
-### 1. Configure SIEM Connection
-Edit `group_vars/all.yml` to set your remote log destination:
+### 1. Configure the SIEM connection
+Edit **`inventory/group_vars/all.yml`** (this is the file Ansible auto-loads — *not* a top-level `group_vars/`):
 
 ```yaml
 siem_host: "192.168.1.50"
-siem_port: "514"
-siem_protocol: "tcp" # or udp
+siem_port: 514
+siem_protocol: "tcp"   # or udp
 ```
-### 2. Run the Playbook
 
-Run the main playbook against your inventory:
+### 2. Add your hosts
+Edit `inventory/hosts.ini` and put hosts under `[ubuntu_servers]` / `[centos_servers]`.
 
-Bash
+### 3. Run the playbook
 
-```
+```bash
 ansible-playbook -i inventory/hosts.ini playbooks/site.yml
-
+# parolalı sudo ise:
+ansible-playbook -i inventory/hosts.ini playbooks/site.yml -K
 ```
+
+> **Control node:** Ansible does not run natively on Windows. Use WSL or a small Linux VM as the control node.
+> See [docs/lab-testing.md](docs/lab-testing.md) for a full VMware Workstation walkthrough (this is exactly how the
+> stack was validated end-to-end).
 
 ## Test & Verification
 
-Apply the playbook to a test host first, then verify the stack is running and capturing events.
-
-### Service Checks (On Target Host)
-
-Bash
-
-```
-# Check Sysmon status (Service name: sysmon)
-sudo systemctl status sysmon
-
-# Check Auditd rules are loaded
+### Service checks (on a target host)
+```bash
+sudo systemctl status sysmon       # active (running)  /opt/sysmon/sysmon ... -service
 sudo auditctl -l
-
-# Check Rsyslog status
 sudo systemctl status rsyslog
-
 ```
 
-### Generate Test Events
-
-Execute the following commands on the target host to trigger specific rules:
-
-Bash
-
-```
-# Trigger: Sysmon ProcessCreate (ID 1) & Auditd Package Mgmt
-sudo apt-get update 
-
-# Trigger: Auditd Network Config & Sysmon FileCreate (ID 11)
-sudo touch /etc/NetworkManager/test_alert
-
-# Trigger: Auditd Persistence (Systemd) & Sysmon FileCreate
-sudo bash -c 'echo "[Unit]" > /etc/systemd/system/malicious.service'
-
-# Trigger: Sysmon NetworkConnect (ID 3)
-curl -I [https://www.google.com](https://www.google.com)
-
-# Trigger: Auditd Identity Change
-sudo touch /etc/sudoers.d/test_privesc
-
-# Trigger: Auditd Ptrace (Injection)
-strace ls
-
+### Confirm logs are produced locally (do this BEFORE blaming the SIEM)
+```bash
+# Sysmon events arrive in the journal/syslog tagged 'sysmon' (XML <Event>...Linux-Sysmon...)
+sudo journalctl -t sysmon -n 5 --no-pager
+# Auditd events
+sudo ausearch -m CONFIG_CHANGE,SYSCALL -ts recent | tail
+# Can rsyslog (syslog user) read audit.log? (Ubuntu)
+sudo -u syslog head -c1 /var/log/audit/audit.log && echo OK
 ```
 
-### Check Local Logs
-
-Verify that logs are being generated locally before checking the SIEM:
-
-Bash
-
+### Generate test events
+```bash
+sudo apt-get update || sudo dnf -y makecache          # ProcessCreate (ID 1) + pkg activity
+sudo touch /etc/NetworkManager/test_alert             # Auditd network + Sysmon FileCreate (ID 11)
+sudo bash -c 'echo "[Unit]" > /etc/systemd/system/malicious.service'  # Auditd persistence + FileCreate
+curl -I https://www.google.com                        # Sysmon NetworkConnect (ID 3)
+sudo touch /etc/sudoers.d/test_privesc                # Auditd identity change
+strace ls                                             # Auditd ptrace (injection)
 ```
-# Check recent Sysmon logs (via Journal)
-sudo journalctl -u sysmon -n 20 --no-pager
 
-# Check recent Auditd logs (via ausearch)
-sudo ausearch -m CONFIG_CHANGE,SYSCALL -ts recent
-
+### Confirm delivery to the SIEM
+```bash
+sudo ss -tanp | grep ':514'                                   # forwarding connection ESTAB?
+sudo timeout 5 tcpdump -ni any host <siem_host> and port <siem_port>
 ```
+On the SIEM/collector you should see messages tagged `auditd` and `sysmon`.
 
 ## Production Notes
 
--   **Sensitive Variables:** Always use Ansible Vault for sensitive data (e.g., SIEM credentials if used).
-    
--   **Performance:** Sysmon Event ID 11 (FileCreate) and ID 23 (FileDelete) on `*` (all files) can be noisy on high-traffic file servers or database servers. Tune the `sysmon-config.xml` if necessary.
-    
--   **Privileges:** The `rsyslog` service is configured with ACLs to read `/var/log/audit/audit.log` without running as full root (if configured via ACL method).### 2. Run the Playbook
-
-Run the main playbook against your inventory:
-
-Bash
-
-```
-ansible-playbook -i inventory/hosts.ini playbooks/site.yml
-
-```
-
-## Test & Verification
-
-Apply the playbook to a test host first, then verify the stack is running and capturing events.
-
-### Service Checks (On Target Host)
-
-Bash
-
-```
-# Check Sysmon status (Service name: sysmon)
-sudo systemctl status sysmon
-
-# Check Auditd rules are loaded
-sudo auditctl -l
-
-# Check Rsyslog status
-sudo systemctl status rsyslog
-
-```
-
-### Generate Test Events
-
-Execute the following commands on the target host to trigger specific rules:
-
-Bash
-
-```
-# Trigger: Sysmon ProcessCreate (ID 1) & Auditd Package Mgmt
-sudo apt-get update 
-
-# Trigger: Auditd Network Config & Sysmon FileCreate (ID 11)
-sudo touch /etc/NetworkManager/test_alert
-
-# Trigger: Auditd Persistence (Systemd) & Sysmon FileCreate
-sudo bash -c 'echo "[Unit]" > /etc/systemd/system/malicious.service'
-
-# Trigger: Sysmon NetworkConnect (ID 3)
-curl -I [https://www.google.com](https://www.google.com)
-
-# Trigger: Auditd Identity Change
-sudo touch /etc/sudoers.d/test_privesc
-
-# Trigger: Auditd Ptrace (Injection)
-strace ls
-
-```
-
-### Check Local Logs
-
-Verify that logs are being generated locally before checking the SIEM:
-
-Bash
-
-```
-# Check recent Sysmon logs (via Journal)
-sudo journalctl -u sysmon -n 20 --no-pager
-
-# Check recent Auditd logs (via ausearch)
-sudo ausearch -m CONFIG_CHANGE,SYSCALL -ts recent
-
-```
-
-## Production Notes
-
--   **Sensitive Variables:** Always use Ansible Vault for sensitive data (e.g., SIEM credentials if used).
-    
--   **Performance:** Sysmon Event ID 11 (FileCreate) and ID 23 (FileDelete) on `*` (all files) can be noisy on high-traffic file servers or database servers. Tune the `sysmon-config.xml` if necessary.
-    
--   **Privileges:** The `rsyslog` service is configured with ACLs to read `/var/log/audit/audit.log` without running as full root (if configured via ACL method).
+* **Sensitive variables:** use Ansible Vault for any credentials. Do **not** keep SSH/become passwords in the
+  inventory the way the lab does.
+* **Performance:** Sysmon FileCreate (ID 11) / FileDelete (ID 23) can be noisy on busy file/DB servers — tune
+  `roles/sysmon_linux/templates/sysmon-config.xml.j2`.
+* **SELinux/AppArmor:** the roles handle the common CentOS 8 SELinux cases; if you run enforcing with extra
+  confinement, check `ausearch -m AVC -ts recent`.
+* **`syslog` group ordering:** on Debian, auditd's `log_group=syslog` needs the `syslog` group to exist (created by
+  the rsyslog package, which is present by default on Ubuntu/Debian).
