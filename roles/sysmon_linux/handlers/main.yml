@@ -1,5 +1,3 @@
 ---
-- name: Reload systemd
-  systemd:
-    daemon_reload: true
-  become: true
+# Sysmon, 'sysmon -i' tarafından kurulan kendi MS systemd birimiyle yönetilir;
+# özel handler gerekmez. (Config değişikliği 'sysmon -c' ile canlı uygulanır.)

@@ -6,8 +6,5 @@ siem_host: "127.0.0.1"
 siem_port: 514
 siem_protocol: "udp"
 
-# Queue Configuration
+# Queue Configuration (disk-assisted queue spill limit)
 rsyslog_queue_maxchk: "1g"
-
-# Sysmon dedicated log file — sysmon_linux rolüyle senkron olmalı
-sysmon_log_path: "/var/log/sysmon/sysmon.log"

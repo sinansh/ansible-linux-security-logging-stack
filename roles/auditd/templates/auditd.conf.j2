@@ -3,6 +3,9 @@
 # Log file path (Critical for rsyslog imfile)
 log_file = /var/log/audit/audit.log
 
+# Log file group — lets rsyslog read audit.log without ACLs (survives rotation).
+log_group = {{ auditd_log_group }}
+
 # Log format
 log_format = ENRICHED
 

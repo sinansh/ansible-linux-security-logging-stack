@@ -6,6 +6,12 @@
 # RHEL/CentOS: /etc/audit/rules.d/audit.rules
 audit_rules_path: "/etc/audit/rules.d/audit.rules"
 
+# Log file group — rsyslog'un audit.log'u okuyabilmesi için.
+# Debian/Ubuntu'da rsyslog 'syslog' kullanıcısı olarak çalışır → log_group=syslog
+# audit.log'u root:syslog 0640 yapar ve auditd bunu rotasyonda korur (ACL yerine).
+# RHEL/CentOS'ta rsyslog root'tur → 'root' yeterli (okuma SELinux modülüyle açılır).
+auditd_log_group: "{{ 'syslog' if ansible_facts['os_family'] == 'Debian' else 'root' }}"
+
 # Buffer size for audit messages
 auditd_buffer_size: 8192
 

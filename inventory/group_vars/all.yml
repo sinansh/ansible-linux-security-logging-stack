@@ -1,30 +1,27 @@
+---
+# ─────────────────────────────────────────────────────────────────────────────
+# Bu dosya envantere bitişik olduğu için (inventory/group_vars/all.yml) TÜM
+# hostlar için otomatik yüklenir. SIEM hedefini burada ayarlayın.
+# ─────────────────────────────────────────────────────────────────────────────
 
-# SIEM destination
+# SIEM destination  ───  ⚠️ KENDİ SIEM/collector ADRESİNİZLE DEĞİŞTİRİN
 siem_host: "192.168.42.129"
 siem_port: 514
-siem_protocol: "tcp"
+siem_protocol: "tcp"        # tcp | udp  (lab testinde tcp önerilir: teslimi doğrulamak kolay)
 
-# Sysmon config path
+# Sysmon (olaylar syslog'a tag=sysmon ile gider; ayrı log dosyası yok)
 sysmon_config_path: "/etc/sysmon/sysmon-config.xml"
 
-# Sysmon dedicated log file (journald'ı bypass eder, disk şişmesini önler)
-sysmon_log_path: "/var/log/sysmon/sysmon.log"
-
-# Candidate service names (depending on distribution)
-sysmon_service_candidates:
-  - sysmon
-  - sysmonforlinux
-
-# Audit rules path
+# Auditd kural dosyası (rules.d altında augenrules ile yüklenir)
 audit_rules_path: "/etc/audit/rules.d/99-siem.rules"
 
-# Sysmon NetworkConnect exclusion IP listesi
-# Zabbix, monitoring vb. araçların hedef IP'lerini buraya ekle
+# Sysmon NetworkConnect exclusion — hedef IP listesi
+# Zabbix, monitoring vb. araçların hedef IP'lerini buraya ekleyin.
 sysmon_excluded_destination_ips:
   - "192.168.42.129"
 
-# Sysmon NetworkConnect exclusion image listesi
-# NetworkConnect üretmesini istemediğimiz process binary path'leri
+# Sysmon NetworkConnect exclusion — image (binary path) listesi
+# NetworkConnect üretmesini istemediğiniz gürültülü process'leri buraya ekleyin.
 sysmon_excluded_network_images:
   # Zabbix
   - "/usr/sbin/zabbix_agent2"

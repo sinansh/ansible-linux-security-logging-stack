@@ -1,10 +1,10 @@
-# Gerekli modüller
+# Managed by Ansible (roles/rsyslog_siem). Forwards security logs to the SIEM.
 module(load="imfile")
 
 # ─────────────────────────────────────────────
 # GÖNDERİM KURALI (Ruleset)
 # Hem auditd hem de sysmon bu ruleset'i kullanır.
-# "stop" direktifi: iletim sonrası mesaj yerel dosyalara yazılmaz.
+# "stop": iletim sonrası mesaj yerel dosyalara yazılmaz (disk kalıntısı kalmaz).
 # ─────────────────────────────────────────────
 ruleset(name="SendToSIEM") {
     action(
@@ -23,7 +23,8 @@ ruleset(name="SendToSIEM") {
 }
 
 # ─────────────────────────────────────────────
-# AUDITD LOGLARINI OKU VE GÖNDER
+# AUDITD: kendi log dosyasını imfile ile oku ve gönder.
+# Okuma izni auditd 'log_group' ile verilir (Debian: syslog; RHEL: root+SELinux).
 # ─────────────────────────────────────────────
 input(type="imfile"
       File="/var/log/audit/audit.log"
@@ -33,16 +34,11 @@ input(type="imfile"
 )
 
 # ─────────────────────────────────────────────
-# SYSMON LOGLARINI OKU VE GÖNDER
-#
-# Sysmon servisi artık journald yerine doğrudan bu dosyaya yazar
-# (sysmon.service StandardOutput=append:{{ sysmon_log_path }}).
-# imfile ile okuyup SIEM'e iletiyoruz; "stop" sayesinde başka
-# hiçbir yerel dosyaya yazılmıyor — disk üzerinde kalıntı kalmaz.
+# SYSMON: Sysmon for Linux olayları doğrudan SYSLOG'a yazar (programname "sysmon",
+# Provider "Linux-Sysmon"). Dosya/stdout YOK. Bu tag'i yakalayıp SIEM'e iletiyoruz.
+# Bu dosya 30-... ön ekiyle 50-default'tan ÖNCE yüklendiğinden, "stop" sayesinde
+# sysmon olayları yerel /var/log/syslog'a da düşmez.
 # ─────────────────────────────────────────────
-input(type="imfile"
-      File="{{ sysmon_log_path }}"
-      Tag="sysmon"
-      Ruleset="SendToSIEM"
-      freshStartTail="off"
-)
+if ($programname == "sysmon") then {
+    call SendToSIEM
+}
