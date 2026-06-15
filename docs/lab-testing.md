@@ -37,8 +37,8 @@ ansible --version
 git clone <repo-url> ansible-linux-security-logging-stack
 cd ansible-linux-security-logging-stack
 
-# Rollerin ihtiyaç duyduğu koleksiyonlar (acl, seboolean, ini_file)
-ansible-galaxy collection install -r requirements.yml
+# Koleksiyon kurulumu GEREKMEZ — roller yalnızca ansible.builtin modülleri kullanır
+# (eski/çıplak ansible-core ortamlarıyla uyumlu).
 ```
 
 SSH anahtarını hedeflere dağıtın (parolasız sudo varsa en kolayı):

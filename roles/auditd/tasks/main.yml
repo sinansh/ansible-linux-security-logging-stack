@@ -5,6 +5,17 @@
     state: present
   become: true
 
+# Debian/Ubuntu'da auditd.conf'taki log_group=syslog'un çalışması için 'syslog'
+# kullanıcı/grubunun mevcut olması gerekir. Bunları rsyslog paketi oluşturur.
+# Minimal/cloud 24.04 imajlarında rsyslog önyüklü OLMAYABİLİR ve auditd rolü
+# rsyslog_siem rolünden ÖNCE çalışır → grubu burada garantiye alıyoruz.
+- name: Ensure rsyslog is present so the 'syslog' group exists (Debian)
+  package:
+    name: rsyslog
+    state: present
+  become: true
+  when: ansible_facts['os_family'] == 'Debian'
+
 - name: Deploy auditd configuration file
   template:
     src: auditd.conf.j2
@@ -56,12 +67,13 @@
         ''
       }}
 
+# 'active = yes' satırını 'no' yap. lineinfile (ansible.builtin) kullanıyoruz ki
+# hiçbir koleksiyona (community.general.ini_file) bağımlılık olmasın.
 - name: Disable audispd syslog plugin to prevent log duplication
-  ini_file:
+  lineinfile:
     path: "{{ audit_syslog_conf_path }}"
-    section: null
-    option: active
-    value: 'no'
+    regexp: '^\s*active\s*='
+    line: 'active = no'
     mode: '0644'
   become: true
   notify: Restart auditd
