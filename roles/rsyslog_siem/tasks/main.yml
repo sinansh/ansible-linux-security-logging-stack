@@ -31,11 +31,17 @@
     - (ansible_facts.selinux.status | default('disabled')) == 'enabled'
   become: true
   block:
+    # seboolean (ansible.posix) yerine builtin command kullanıyoruz ki hiçbir
+    # koleksiyon bağımlılığı olmasın. getsebool ile idempotensi sağlıyoruz.
+    - name: Check syslogd_can_network_connect SELinux boolean
+      command: getsebool syslogd_can_network_connect
+      register: sebool_net_state
+      changed_when: false
+
     - name: Allow rsyslog to make outbound network connections (omfwd)
-      seboolean:
-        name: syslogd_can_network_connect
-        state: true
-        persistent: true
+      command: setsebool -P syslogd_can_network_connect on
+      when: "'--> on' not in sebool_net_state.stdout"
+      changed_when: true
 
     - name: Ensure SELinux policy build tools are present
       package:
