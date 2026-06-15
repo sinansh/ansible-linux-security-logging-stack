@@ -228,3 +228,32 @@ sudo semodule -r rsyslog_read_audit 2>/dev/null || true
 ```
 **Öneri:** her hedefin temiz halinde bir VMware **snapshot** alın; her test turundan sonra
 snapshot'a dönmek en hızlı yöntemdir.
+
+---
+
+## 10. Ubuntu 24.04 / 26.04 (yeni sürümler) — eski ansible-core ile
+
+Lab'da **ansible-core 2.13** (kurumun 2.14'ünün eşdeğeri) ile **24.04 (Python 3.12)** ve
+**26.04 (Python 3.14)** hedefleri uçtan uca doğrulandı — her ikisinden de Sysmon + Auditd
+SIEM'e ulaştı. Ancak iki tuzak var (ikisi de roller değil, ortam kaynaklı):
+
+### a) `get_url`/HTTPS, eski ansible-core'da Python 3.12+'da çöker
+Belirti: `'CustomHTTPSConnection' object has no attribute 'cert_file'`. ansible-core ≤2.14'ün
+dahili `urls.py`'si Python 3.12'nin değişen `http.client`'ıyla uyumsuz (≥2.16'da düzeldi).
+**Bu repoda çözüldü:** Microsoft repo indirme artık hedefin `wget`'iyle yapılıyor
+(`roles/sysmon_linux/tasks/install-Debian.yml`). Kendi playbook'larınızda 24.04/26.04'e
+`get_url`/`uri` ile HTTPS çekiyorsanız ya hedefin `wget`/`curl`'ünü kullanın ya da
+ansible-core'u ≥2.16'ya yükseltin.
+
+### b) Ubuntu 26.04: varsayılan `sudo` artık `sudo-rs` → `become` timeout
+26.04 (ve 25.10+) varsayılan olarak **sudo-rs** (Rust) ile gelir. Sudo çalışır ama Ansible'ın
+parolalı `become` prompt-algılaması sudo-rs ile uyuşmaz → `Timeout waiting for privilege
+escalation prompt`. Üç çözümden biri:
+1. **NOPASSWD** (en yaygın otomasyon yolu): ansible kullanıcısına parolasız sudo ver, envanterde
+   `ansible_become_pass` koyma → ansible `sudo -n` kullanır, prompt gerekmez. (Lab'da bunu kullandık.)
+2. **Classic sudo'ya dön:** 26.04'te klasik `sudo` (1.9.x) paketi de kuruludur; `update-alternatives`
+   ile `/usr/bin/sudo`'yu klasik sudo'ya çevir.
+3. **Yeni ansible-core** kullan (sudo-rs uyumu olan sürüm).
+
+> Özet: 24.04/26.04 filolarında bu repo için **ansible-core 2.14'ü değiştirmenize gerek yok**
+> (wget düzeltmesi yeterli); sadece 26.04'te sudo-rs için yukarıdaki seçeneklerden birini uygulayın.

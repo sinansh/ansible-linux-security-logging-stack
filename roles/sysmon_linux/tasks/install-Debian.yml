@@ -9,10 +9,15 @@
     update_cache: yes
   become: true
 
-- name: Download Microsoft GPG Key (Debian/Ubuntu)
-  get_url:
-    url: "https://packages.microsoft.com/config/{{ ansible_distribution | lower }}/{{ ansible_distribution_version }}/packages-microsoft-prod.deb"
-    dest: /tmp/packages-microsoft-prod.deb
+# Hedefin kendi wget'iyle indiriyoruz (yukarıda prereq olarak kuruldu).
+# ansible'ın get_url/uri'si dahili urls.py'ye dayanır ve eski ansible-core
+# (<=2.14) Python 3.12+ hedeflerde 'CustomHTTPSConnection has no attribute
+# cert_file' ile çöker. wget hedefin TLS yığınını kullanır → bu sorunu aşar.
+- name: Download Microsoft repo config package (wget on target)
+  command: >-
+    wget -q -O /tmp/packages-microsoft-prod.deb
+    https://packages.microsoft.com/config/{{ ansible_distribution | lower }}/{{ ansible_distribution_version }}/packages-microsoft-prod.deb
+  changed_when: true
   become: true
 
 - name: Install Microsoft Repository (Debian/Ubuntu)

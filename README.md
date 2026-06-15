@@ -126,3 +126,7 @@ On the SIEM/collector you should see messages tagged `auditd` and `sysmon`.
   confinement, check `ausearch -m AVC -ts recent`.
 * **`syslog` group ordering:** on Debian, auditd's `log_group=syslog` needs the `syslog` group to exist (created by
   the rsyslog package, which is present by default on Ubuntu/Debian).
+* **Ubuntu 24.04 / 26.04 with older ansible-core (≤2.14):** verified working end-to-end. Two environment caveats are
+  documented in [docs/lab-testing.md](docs/lab-testing.md): the Microsoft-repo download uses the target's `wget`
+  (ansible's `get_url` breaks on Python 3.12+ with old ansible-core), and Ubuntu 26.04 ships `sudo-rs` which breaks
+  password `become` (use NOPASSWD, classic sudo, or a newer ansible-core).
