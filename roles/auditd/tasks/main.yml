@@ -1,7 +1,7 @@
 ---
 - name: Install auditd
   package:
-    name: auditd
+    name: "{{ auditd_package_name }}"
     state: present
   become: true
 
@@ -33,7 +33,7 @@
     owner: root
     group: root
     mode: '0640'
-  notify: Reload audit rules
+  register: audit_rules_file
   become: true
 
 # Servis kurallar deploy edildikten SONRA başlatılır —
@@ -43,6 +43,26 @@
     name: auditd
     enabled: true
     state: started
+  become: true
+
+# Kuralları kernel'e yükleme, EskIDEN yalnızca "Deploy audit rules file"in tetiklediği
+# bir handler'la yapılıyordu. Ancak play, kural dosyası deploy edildikten SONRA fakat
+# handler'lar flush edilmeden ÖNCE herhangi bir yerde başarısız olursa (ör. sonraki
+# rsyslog rolünde), kurallar kernel'e YÜKLENMEDEN kalır; sonraki run'larda dosya
+# değişmediği için handler bir daha tetiklenmez → auditd sessizce kuralsız çalışır.
+# Bu iki görev drift'i her koşulda kapatır — idempotent ve kendini onarır.
+# NOT: 'augenrules --check' drift olsa bile rc=0 döndürür (çıktıya mesaj basar), o yüzden
+# rc'ye güvenilmez; kernel'de GERÇEKTEN yüklü kural var mı diye 'auditctl -l'e bakıyoruz.
+- name: Check whether audit rules are loaded in the kernel
+  command: auditctl -l
+  register: auditd_loaded_rules
+  changed_when: false
+  become: true
+
+- name: Load audit rules into the kernel (on change or when none are loaded)
+  command: augenrules --load
+  when: audit_rules_file is changed or ('No rules' in auditd_loaded_rules.stdout)
+  changed_when: true
   become: true
 
 # ── Audispd syslog plugin: rsyslog ile çakışmayı önle ────────────────────────

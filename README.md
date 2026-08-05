@@ -29,8 +29,11 @@ Important facts (verified in a lab):
     becomes `root:syslog 0640` and stays readable **across rotation** (ACLs are not used — auditd re-`chmod`s the
     file on rotation and would wipe an ACL mask).
   * **RHEL/CentOS 8:** rsyslog runs as **root** (no `syslog` user). DAC is fine, but SELinux blocks the read, so the
-    role enables `syslogd_can_network_connect` and installs a tiny custom SELinux module letting `syslogd_t` read
-    `auditd_log_t`.
+    role installs a tiny custom SELinux module letting `syslogd_t` read `auditd_log_t`. Outbound forwarding to the
+    **standard syslog port 514** (`syslog_port_t`) is already permitted by the base policy, so no boolean is needed;
+    the legacy `syslogd_can_network_connect` boolean was **removed in RHEL/CentOS 8**, so the role only flips it when
+    it still exists (RHEL 7). For a **non-standard** `siem_port` under SELinux enforcing, label it first:
+    `semanage port -a -t syslog_port_t -p tcp <port>`.
 * No `StandardOutput=append:` is used, so there is **no systemd-239 problem** on CentOS 8.
 
 ## Detection Capabilities
@@ -124,6 +127,11 @@ On the SIEM/collector you should see messages tagged `auditd` and `sysmon`.
   `roles/sysmon_linux/templates/sysmon-config.xml.j2`.
 * **SELinux/AppArmor:** the roles handle the common CentOS 8 SELinux cases; if you run enforcing with extra
   confinement, check `ausearch -m AVC -ts recent`.
+* **RHEL/CentOS 8 (Rocky 8) — validated end-to-end** with SELinux enforcing: Sysmon + Auditd both reach the SIEM,
+  `0` AVC denials, idempotent (`changed=0` on re-run). Two role behaviors worth knowing: (a) audit rules are loaded
+  by an explicit self-healing task (`augenrules --load` fires when `auditctl -l` is empty or the rules file changed —
+  `augenrules --check` returns rc 0 even on drift, so it can't be trusted); (b) the custom SELinux audit-read module
+  is re-installed whenever `semodule -l` doesn't list it, not only when the `.te` source changes.
 * **`syslog` group ordering:** on Debian, auditd's `log_group=syslog` needs the `syslog` group to exist (created by
   the rsyslog package, which is present by default on Ubuntu/Debian).
 * **Ubuntu 24.04 / 26.04 with older ansible-core (≤2.14):** verified working end-to-end. Two environment caveats are

@@ -1,13 +1,16 @@
 ---
-# augenrules --load kuralları çalışan kernel'e yükler; restart gerekmez.
-# Restart yalnızca auditd.conf değiştiğinde gereklidir.
-- name: Reload audit rules
-  command: augenrules --load
-  become: true
-  changed_when: true
+# NOT: Kuralları kernel'e yükleme artık handler ile DEĞİL, auditd/tasks/main.yml içindeki
+# idempotent "augenrules --check/--load" görev çiftiyle yapılıyor (handler, play yarıda
+# başarısız olduğunda flush edilmediği için kuralların yüklenmeden kalmasına yol açıyordu).
 
+# RHEL/CentOS'ta auditd.service 'RefuseManualStop=yes' taşır → 'systemctl restart auditd'
+# "Failed ... Operation refused" ile BAŞARISIZ olur. Desteklenen yol SysV wrapper'dır:
+# 'service auditd restart' (auditd'nin kendi stop mekanizmasını çağırır).
+# Debian/Ubuntu'da böyle bir kısıt yok; systemd restart sorunsuz çalışır.
 - name: Restart auditd
-  systemd:
-    name: auditd
-    state: restarted
   become: true
+  command: >-
+    {{ 'service auditd restart'
+       if ansible_facts['os_family'] == 'RedHat'
+       else 'systemctl restart auditd' }}
+  changed_when: true

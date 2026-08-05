@@ -148,6 +148,25 @@ sudo dnf clean all && sudo dnf -y makecache
 
 (Rocky 8 / Alma 8 kullanıyorsanız bu adım gerekmez.)
 
+### 6b. RHEL/CentOS 8 (Rocky 8) — lab'da doğrulandı, dikkat edilecekler
+
+Rocky 8.10 hedefi **SELinux enforcing** ile uçtan uca doğrulandı: Sysmon + Auditd SIEM'e ulaştı,
+`0` AVC denial, tekrar çalıştırmada idempotent. Bilinmesi gerekenler:
+
+- **auditd paketi `audit`** (Debian'da `auditd`); rol bunu `os_family`'e göre çözer.
+- **auditd restart:** RHEL'de `auditd.service` `RefuseManualStop=yes` taşır → `systemctl restart auditd`
+  başarısız olur; rol `service auditd restart` kullanır.
+- **`syslogd_can_network_connect` boolean'ı RHEL8'de yok** → 514'e giden bağlantı zaten policy'de
+  serbest; non-standart port için `semanage port -a -t syslog_port_t -p tcp <port>`.
+- **audit kuralları** artık handler yerine idempotent bir görevle yükleniyor (`auditctl -l` boşsa veya
+  kural dosyası değiştiyse `augenrules --load`). Not: `augenrules --check` drift'te bile rc=0 döner.
+- **SELinux audit-read modülü** `semodule -l`'de yoksa yeniden kurulur (yalnızca `.te` değişince değil).
+
+> **Hyper-V + Internal switch/NAT kullanıyorsanız (Wi-Fi host):** NAT yalnızca IPv4'tür ve DHCP
+> vermez → hedefe **static IP** verin. Ayrıca AAAA çözülüp IPv6 tercih edilirse `dnf`/`curl`
+> takılır; hedefte IPv4'ü zorlayın: `/etc/dnf/dnf.conf`'a `ip_resolve=4` ve `/etc/gai.conf`'a
+> `precedence ::ffff:0:0/96  100`.
+
 ---
 
 ## 7. Katman katman doğrulama
@@ -209,7 +228,8 @@ sudo tail -f /var/log/siem-incoming.log
 | `tag=sysmon` gelmiyor (auditd geliyor) | sysmon servisi yok / programname eşleşmiyor | `systemctl is-active sysmon`; `journalctl -t sysmon -n5`; kuralda `$programname == "sysmon"` |
 | `tag=auditd` gelmiyor (sysmon geliyor) | rsyslog audit.log'u okuyamıyor | Ubuntu: `stat -c %U:%G /var/log/audit/audit.log` → `root:syslog`; CentOS: SELinux AVC |
 | CentOS'ta audit logu gelmiyor | SELinux `syslogd_t`→`auditd_log_t` reddi | `ausearch -m AVC -ts recent`; `semodule -l \| grep rsyslog_read_audit` |
-| Hiç paket çıkmıyor (CentOS) | SELinux outbound boolean | `getsebool syslogd_can_network_connect` → `on` olmalı |
+| Hiç paket çıkmıyor (CentOS), port **514** | RHEL8'de bu genelde SELinux değildir (514 = `syslog_port_t` zaten serbest) → `siem_host`/firewall/collector'a bak | `sudo ss -tanp \| grep :514`; `ausearch -m AVC -ts recent` boş olmalı |
+| Hiç paket çıkmıyor (CentOS), **non-standart** port | SELinux port etiketi yok | `semanage port -a -t syslog_port_t -p tcp <port>` (`syslogd_can_network_connect` boolean'ı RHEL8'de KALDIRILDI) |
 | `ss` boş, tcpdump boş | yanlış `siem_host`, firewall, collector dinlemiyor | collector'da `ss -tanp \| grep 514`; arada firewall |
 | `sysmon -i` config'i reddediyor | şema sürümü uyumsuz | `sysmon -? `; gerekiyorsa `sysmon-config.xml.j2` schemaversion'ı düşürün |
 

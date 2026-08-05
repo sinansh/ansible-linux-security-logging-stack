@@ -1,6 +1,12 @@
 ---
 # Defaults for auditd
 
+# Auditd paket adı OS ailesine göre değişir:
+#   Debian/Ubuntu → 'auditd'
+#   RHEL/CentOS/Rocky/Alma → 'audit'  ('auditd' diye bir paket yoktur; kurulum
+#   'No match for argument: auditd' ile başarısız olur)
+auditd_package_name: "{{ 'auditd' if ansible_facts['os_family'] == 'Debian' else 'audit' }}"
+
 # Path to audit.rules file
 # Debian/Ubuntu: /etc/audit/rules.d/audit.rules (often merged) or /etc/audit/audit.rules
 # RHEL/CentOS: /etc/audit/rules.d/audit.rules

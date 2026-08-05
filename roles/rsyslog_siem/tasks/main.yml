@@ -25,22 +25,45 @@
 #      bir özel policy modülü ile izin ver. (RHEL'de rsyslog root'tur, DAC ile
 #      okur ama SELinux yine de reddeder.)
 # ─────────────────────────────────────────────────────────────────────────────
+# SELinux durumunu 'getenforce' ile saptıyoruz. ansible_facts.selinux bazı minimal
+# RHEL imajlarında (libselinux python binding'leri eksikse) DOLMAYABİLİR ve 'disabled'a
+# düşerek aşağıdaki bloğu sessizce atlar → çalışma anında AVC denial (audit okuma +
+# outbound forward kırılır). getenforce doğrudan çekirdek durumunu verir, daha güvenilir.
+- name: Detect SELinux state (RedHat)
+  command: getenforce
+  register: selinux_getenforce
+  changed_when: false
+  failed_when: false
+  when: ansible_facts['os_family'] == 'RedHat'
+  become: true
+
 - name: Configure SELinux to allow rsyslog forwarding and audit-log reads
   when:
     - ansible_facts['os_family'] == 'RedHat'
-    - (ansible_facts.selinux.status | default('disabled')) == 'enabled'
+    - (selinux_getenforce.stdout | default('Disabled')) in ['Enforcing', 'Permissive']
   become: true
   block:
     # seboolean (ansible.posix) yerine builtin command kullanıyoruz ki hiçbir
     # koleksiyon bağımlılığı olmasın. getsebool ile idempotensi sağlıyoruz.
-    - name: Check syslogd_can_network_connect SELinux boolean
+    #
+    # NOT: 'syslogd_can_network_connect' boolean'i RHEL/CentOS 8+ selinux-policy'de
+    # KALDIRILDI (RHEL 6/7 kalıntısı). Yoksa getsebool rc=255 döner → failed_when:false
+    # ile tolere ediyoruz ve setsebool'u yalnızca boolean gerçekten varsa (RHEL7)
+    # çalıştırıyoruz. RHEL8'de standart syslog portuna (514/tcp = syslog_port_t) giden
+    # omfwd bağlantısı policy'de zaten serbesttir; non-standart bir siem_port
+    # kullanacaksanız o portu 'semanage port -a -t syslog_port_t -p tcp <port>' ile
+    # etiketlemeniz gerekir (bu rol standart 514'ü varsayar).
+    - name: Check whether syslogd_can_network_connect SELinux boolean exists
       command: getsebool syslogd_can_network_connect
       register: sebool_net_state
       changed_when: false
+      failed_when: false
 
-    - name: Allow rsyslog to make outbound network connections (omfwd)
+    - name: Allow rsyslog outbound network connections (omfwd) — RHEL7 boolean only
       command: setsebool -P syslogd_can_network_connect on
-      when: "'--> on' not in sebool_net_state.stdout"
+      when:
+        - sebool_net_state.rc == 0
+        - "'--> on' not in sebool_net_state.stdout"
       changed_when: true
 
     - name: Ensure SELinux policy build tools are present
@@ -57,6 +80,14 @@
         owner: root
         group: root
         mode: '0700'
+
+    # Modülün policy store'da GERÇEKTEN yüklü olup olmadığını denetle. Derleme/yükleme
+    # yalnızca .te dosyası değiştiğinde tetiklenirse, modül elle (veya reset'te) kaldırılıp
+    # .te diskte kalınca rol onu bir daha KURMAZ → audit okuma sessizce AVC ile kırılır.
+    - name: List installed SELinux modules
+      command: semodule -l
+      register: selinux_modules_list
+      changed_when: false
 
     - name: Deploy SELinux policy source allowing rsyslog to read audit logs
       copy:
@@ -79,12 +110,19 @@
           allow syslogd_t auditd_log_t:file { open read getattr ioctl lock };
       register: selinux_audit_te
 
+    # (Yeniden) derle+yükle: .te değiştiyse VEYA modül policy store'da yüklü değilse.
+    - name: Determine whether the audit-read SELinux module must be (re)built
+      set_fact:
+        rsyslog_audit_module_build: >-
+          {{ (selinux_audit_te is changed)
+             or ('rsyslog_read_audit' not in selinux_modules_list.stdout) }}
+
     - name: Compile SELinux module (checkmodule)
       command: >-
         checkmodule -M -m
         -o /etc/selinux/local/rsyslog_read_audit.mod
         /etc/selinux/local/rsyslog_read_audit.te
-      when: selinux_audit_te.changed
+      when: rsyslog_audit_module_build | bool
       changed_when: true
 
     - name: Package SELinux module (semodule_package)
@@ -92,12 +130,12 @@
         semodule_package
         -o /etc/selinux/local/rsyslog_read_audit.pp
         -m /etc/selinux/local/rsyslog_read_audit.mod
-      when: selinux_audit_te.changed
+      when: rsyslog_audit_module_build | bool
       changed_when: true
 
     - name: Install SELinux module (semodule)
       command: semodule -i /etc/selinux/local/rsyslog_read_audit.pp
-      when: selinux_audit_te.changed
+      when: rsyslog_audit_module_build | bool
       changed_when: true
       notify: Restart rsyslog
 
