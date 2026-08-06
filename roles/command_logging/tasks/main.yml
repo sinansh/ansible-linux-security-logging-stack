@@ -1,0 +1,26 @@
+---
+# Hedef bashrc dosyası OS ailesine göre değişir:
+#   Debian/Ubuntu → /etc/bash.bashrc  (interaktif non-login shell'lerce source edilir)
+#   RHEL/CentOS   → /etc/bashrc
+- name: Determine interactive bashrc path
+  set_fact:
+    command_logging_bashrc: "{{ '/etc/bash.bashrc' if ansible_facts['os_family'] == 'Debian' else '/etc/bashrc' }}"
+
+# blockinfile marker'lı → idempotent. SOC script'i bunu düz 'cat >>' ile yaptığı için
+# her çalıştırmada bloğu TEKRAR ekliyordu; burada marker sayesinde tek kopya kalır.
+# UYARI: bu, komut satırına yazılan parola/token/secret'ları da SIEM'e gönderir —
+# gizlilik/uyumluluk açısından SOC ile teyit edilmeli.
+- name: Deploy bash command-history logging to SIEM
+  blockinfile:
+    path: "{{ command_logging_bashrc }}"
+    create: true
+    owner: root
+    group: root
+    mode: '0644'
+    marker: "# {mark} ANSIBLE MANAGED: SIEM command logging"
+    block: |
+      # Her interaktif komutu SIEM'e ilet (facility {{ command_logging_facility }}, tag {{ command_logging_tag }}).
+      export MY_IP=$(hostname -I | awk '{print $1}')
+      export PROMPT_COMMAND='PREV_CMD=$(history 1); RETRN_VAL=$?; if [ "$PREV_CMD" != "$LAST_CMD" ]; then logger -p {{ command_logging_facility }}.debug -t {{ command_logging_tag }} "$(logname 2>/dev/null) : $(whoami): $MY_IP : $(pwd) - $(echo "$PREV_CMD")"; fi; LAST_CMD="$PREV_CMD"'
+  become: true
+  when: command_logging_enabled | bool

@@ -8,3 +8,17 @@ siem_protocol: "udp"
 
 # Queue Configuration (disk-assisted queue spill limit)
 rsyslog_queue_maxchk: "1g"
+
+# SOC entegrasyonu: Sysmon + audit.log dışında, standart güvenlik facility'lerini de
+# SIEM'e ilet (yerelde de tutulur — bu forward 'stop' etmez). Kapsam:
+#   auth/authpriv → login, su, sudo, sshd auth olayları
+#   kern          → kernel / netfilter (firewall) mesajları
+#   local1        → (opsiyonel) audit facility, SOC parser'ı local1 bekliyorsa
+#   local6        → bash komut-geçmişi logları (command_logging rolü)
+# Listeyi boşaltmak (siem_forward_facilities: []) facility forwarding'i kapatır.
+siem_forward_facilities:
+  - auth
+  - authpriv
+  - kern
+  - local1
+  - local6

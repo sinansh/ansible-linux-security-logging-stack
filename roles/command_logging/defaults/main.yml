@@ -1,0 +1,7 @@
+---
+# Bash komut-geçmişi loglama (SOC gereksinimi).
+# Her interaktif komutu 'logger' ile syslog'a yazar; rsyslog bu facility'yi
+# SIEM'e iletir (bkz. rsyslog_siem: siem_forward_facilities → local6).
+command_logging_enabled: true
+command_logging_facility: "local6"
+command_logging_tag: "Bash_History"

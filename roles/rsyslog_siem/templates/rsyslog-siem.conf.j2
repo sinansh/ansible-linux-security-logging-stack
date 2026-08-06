@@ -42,3 +42,24 @@ input(type="imfile"
 if ($programname == "sysmon") then {
     call SendToSIEM
 }
+
+{% if siem_forward_facilities | default([]) | length > 0 %}
+# ─────────────────────────────────────────────
+# SOC: STANDART FACILITY FORWARDING
+# auth/authpriv/kern (+ local1/local6) SIEM'e iletilir. Burada "stop" YOK, yani
+# mesajlar yerel /var/log dosyalarına da düşmeye devam eder (yalnızca ek kopya).
+# Ayrı bir disk-queue kullanır (siem_facility_queue) → SendToSIEM'den bağımsız.
+# ─────────────────────────────────────────────
+{{ siem_forward_facilities | join(',') }}.* action(
+    type="omfwd"
+    target="{{ siem_host }}"
+    port="{{ siem_port }}"
+    protocol="{{ siem_protocol }}"
+    template="RSYSLOG_ForwardFormat"
+    queue.type="LinkedList"
+    queue.filename="siem_facility_queue"
+    queue.maxdiskspace="{{ rsyslog_queue_maxchk }}"
+    queue.saveonshutdown="on"
+    action.resumeRetryCount="-1"
+)
+{% endif %}

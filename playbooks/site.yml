@@ -6,3 +6,4 @@
     - sysmon_linux
     - auditd
     - rsyslog_siem
+    - command_logging

@@ -13,10 +13,20 @@ This repository installs and configures a minimal but effective Linux security l
 ## Architecture / How logs reach the SIEM
 
 ```
-Sysmon ──syslog(tag=sysmon)──┐
-                             ├─▶ rsyslog (30-siem.conf) ──omfwd──▶ SIEM (siem_host:siem_port)
-Auditd ──/var/log/audit/audit.log──(imfile)──┘
+Sysmon ──syslog(tag=sysmon)───────────────┐
+Auditd ──/var/log/audit/audit.log──(imfile)┤
+Bash command history ──logger(local6)──────┼─▶ rsyslog (30-siem.conf) ──omfwd──▶ SIEM
+auth/authpriv/kern facilities ─────────────┘                                    (siem_host:siem_port)
 ```
+
+Four telemetry streams reach the SIEM:
+1. **Sysmon** — process/network/file events (`$programname == "sysmon"`).
+2. **Auditd** — `audit.log` read via `imfile` (tag `auditd`).
+3. **Bash command history** — every interactive command via `logger -p local6` (tag `Bash_History`),
+   deployed by the `command_logging` role. ⚠️ This forwards full command lines (including secrets typed
+   on the CLI) to the SIEM — a SOC requirement; confirm it fits your privacy/compliance posture.
+4. **Standard security facilities** — `auth`, `authpriv`, `kern` (+ `local1`/`local6`) forwarded and
+   still kept locally. Tune via `siem_forward_facilities` (empty list disables).
 
 Important facts (verified in a lab):
 
@@ -50,6 +60,11 @@ Important facts (verified in a lab):
 
 ### 2. Auditd (Compliance & Integrity)
 Standard process-execution (`execve`) logging is **disabled** in Auditd to avoid overlap with Sysmon Event ID 1.
+
+The rule set (`roles/auditd/templates/audit.rules.j2`) is a **superset aligned to the SOC's required
+keys** (e.g. `sudo_conf`, `etcpasswd`, `susp_activity`, `tmp_exec`, `sshd`, `sysctl_conf`, `cron_conf`)
+plus this project's extra hardening (audit self-monitoring, kernel modules, `ptrace`, mounts, login
+records, package logs). Keys are kept identical to the SOC script so their SIEM detections match.
 
 * **Identity & Auth:** `/etc/passwd`, `/etc/shadow`, `/etc/group`, sudoers, `sudo`/`passwd` execution, PAM.
 * **Integrity & Persistence:** kernel modules (insmod/rmmod/modprobe/kmod), systemd unit files, cron, mounts/fstab.
