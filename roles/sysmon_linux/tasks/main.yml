@@ -1,56 +1,86 @@
 ---
-- name: Include OS-specific installation tasks
-  include_tasks: "install-{{ ansible_facts['os_family'] }}.yml"
+# ─────────────────────────────────────────────────────────────────────────────
+# PLATFORM DESTEĞİ
+# Sysmon for Linux (Microsoft) yalnızca modern dağıtımlarda çalışır:
+#   • Debian/Ubuntu
+#   • RHEL/CentOS/Rocky/Alma 8+   (glibc >= 2.25, güncel libstdc++, eBPF'li kernel)
+# CentOS/RHEL 7 DESTEKLENMEZ: MS yalnızca el8/el9 RPM yayınlar ve bu paket
+#   libstdc++.so.6(CXXABI_1.3.9) / (GLIBCXX_3.4.21) ile glibc 2.25 ister; EL7'de
+#   glibc 2.17 vardır → bağımlılık çözülemez ("Requires: ..." hatası). EL7 kernel'i
+#   (3.10) Sysmon'un kullandığı eBPF özelliklerini de sağlamaz.
+# Bu yüzden EL7'de rolü HATA vermeden ATLIYORUZ; host'un güvenlik kaydı auditd +
+# command_logging + rsyslog->SIEM iletimiyle sağlanmaya devam eder.
+# ─────────────────────────────────────────────────────────────────────────────
+- name: Determine whether Sysmon for Linux is supported on this host
+  set_fact:
+    sysmon_supported: >-
+      {{ not (ansible_facts['os_family'] == 'RedHat'
+              and ansible_facts['distribution_major_version'] is version(sysmon_min_el_version, '<')) }}
 
-- name: Ensure Sysmon config directory exists
-  file:
-    path: "{{ sysmon_config_path | dirname }}"
-    state: directory
-    owner: root
-    group: root
-    mode: '0755'
-  become: true
+- name: Warn that Sysmon is unsupported on this platform (skipping)
+  debug:
+    msg: >-
+      Sysmon for Linux is not available on {{ ansible_distribution }}
+      {{ ansible_distribution_major_version }} (requires EL{{ sysmon_min_el_version }}+ /
+      glibc >= 2.25). Skipping the sysmon_linux role; auditd, command_logging and
+      rsyslog->SIEM forwarding still provide coverage on this host.
+  when: not (sysmon_supported | bool)
 
-- name: Deploy Sysmon configuration
-  template:
-    src: sysmon-config.xml.j2
-    dest: "{{ sysmon_config_path }}"
-    owner: root
-    group: root
-    mode: '0644'
-  become: true
-  register: sysmon_config_file
+- name: Install and configure Sysmon for Linux
+  when: sysmon_supported | bool
+  block:
+    - name: Include OS-specific installation tasks
+      include_tasks: "install-{{ ansible_facts['os_family'] }}.yml"
 
-- name: Check if Sysmon service is active
-  command: systemctl is-active sysmon
-  register: sysmon_service_status
-  failed_when: false
-  changed_when: false
-  become: true
+    - name: Ensure Sysmon config directory exists
+      file:
+        path: "{{ sysmon_config_path | dirname }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      become: true
 
-# 'sysmon -i' Sysmon for Linux'u DOĞRU şekilde kurar: config'i /opt/sysmon/config.xml'e
-# kopyalar, systemd birimini kendisi oluşturur
-#   (Type=forking, ExecStart=/opt/sysmon/sysmon -i /opt/sysmon/config.xml -service)
-# ve servisi başlatır. Sysmon olayları bir dosyaya/stdout'a DEĞİL, doğrudan
-# SYSLOG'a (programname/tag = "sysmon") yazılır; rsyslog_siem rolü bu tag'i
-# yakalayıp SIEM'e iletir. Bu yüzden burada özel unit / log dosyası YOK.
-- name: Install Sysmon (first-time setup)
-  command: sysmon -i {{ sysmon_config_path }} -accepteula
-  become: true
-  when: (sysmon_service_status.rc | default(1)) != 0
-  changed_when: true
+    - name: Deploy Sysmon configuration
+      template:
+        src: sysmon-config.xml.j2
+        dest: "{{ sysmon_config_path }}"
+        owner: root
+        group: root
+        mode: '0644'
+      become: true
+      register: sysmon_config_file
 
-- name: Update Sysmon configuration (config change detected)
-  command: sysmon -c {{ sysmon_config_path }}
-  become: true
-  when:
-    - (sysmon_service_status.rc | default(1)) == 0
-    - sysmon_config_file.changed
-  changed_when: true
+    - name: Check if Sysmon service is active
+      command: systemctl is-active sysmon
+      register: sysmon_service_status
+      failed_when: false
+      changed_when: false
+      become: true
 
-- name: Ensure Sysmon service is enabled and started
-  systemd:
-    name: sysmon
-    state: started
-    enabled: true
-  become: true
+    # 'sysmon -i' Sysmon for Linux'u DOĞRU şekilde kurar: config'i /opt/sysmon/config.xml'e
+    # kopyalar, systemd birimini kendisi oluşturur
+    #   (Type=forking, ExecStart=/opt/sysmon/sysmon -i /opt/sysmon/config.xml -service)
+    # ve servisi başlatır. Sysmon olayları bir dosyaya/stdout'a DEĞİL, doğrudan
+    # SYSLOG'a (programname/tag = "sysmon") yazılır; rsyslog_siem rolü bu tag'i
+    # yakalayıp SIEM'e iletir. Bu yüzden burada özel unit / log dosyası YOK.
+    - name: Install Sysmon (first-time setup)
+      command: sysmon -i {{ sysmon_config_path }} -accepteula
+      become: true
+      when: (sysmon_service_status.rc | default(1)) != 0
+      changed_when: true
+
+    - name: Update Sysmon configuration (config change detected)
+      command: sysmon -c {{ sysmon_config_path }}
+      become: true
+      when:
+        - (sysmon_service_status.rc | default(1)) == 0
+        - sysmon_config_file.changed
+      changed_when: true
+
+    - name: Ensure Sysmon service is enabled and started
+      systemd:
+        name: sysmon
+        state: started
+        enabled: true
+      become: true

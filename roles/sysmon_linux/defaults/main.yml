@@ -4,6 +4,11 @@
 # Source-of-truth config path on the target (sysmon -i copies it to /opt/sysmon/config.xml)
 sysmon_config_path: "/etc/sysmon/sysmon-config.xml"
 
+# Minimum RHEL-family major version Sysmon for Linux supports. Microsoft only ships
+# el8/el9 RPMs (glibc >= 2.25, modern libstdc++, eBPF kernel); EL7 cannot run them,
+# so the role skips itself with a warning on EL major versions below this value.
+sysmon_min_el_version: "8"
+
 # NetworkConnect exclusion: destination IP listesi
 # Ortama göre group_vars/all.yml veya host_vars'tan override edilebilir
 sysmon_excluded_destination_ips: []
