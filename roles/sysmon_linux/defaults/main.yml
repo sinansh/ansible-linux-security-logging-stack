@@ -4,6 +4,12 @@
 # Source-of-truth config path on the target (sysmon -i copies it to /opt/sysmon/config.xml)
 sysmon_config_path: "/etc/sysmon/sysmon-config.xml"
 
+# Runtime config the installed Sysmon service actually loads (ExecStart reads this).
+# 'sysmon -i' and 'sysmon -c' both (re)write this file byte-identical to the config
+# they are handed, so we compare it against sysmon_config_path to detect drift and
+# to verify a reload really took effect.
+sysmon_runtime_config_path: "/opt/sysmon/config.xml"
+
 # Minimum RHEL-family major version Sysmon for Linux supports. Microsoft only ships
 # el8/el9 RPMs (glibc >= 2.25, modern libstdc++, eBPF kernel); EL7 cannot run them,
 # so the role skips itself with a warning on EL major versions below this value.

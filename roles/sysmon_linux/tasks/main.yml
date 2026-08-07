@@ -68,14 +68,40 @@
       command: sysmon -i {{ sysmon_config_path }} -accepteula
       become: true
       when: (sysmon_service_status.rc | default(1)) != 0
+      register: sysmon_first_install
       changed_when: true
 
-    - name: Update Sysmon configuration (config change detected)
+    # ── Drift'e duyarlı reload ────────────────────────────────────────────────
+    # Reload'u yalnızca /etc şablonu BU çalıştırmada "changed" olduğunda tetiklemek
+    # YETERSİZ: canlı /opt config'i bir kez desired'dan saparsa (başarısız reload,
+    # elle değişiklik, reimage, paket reinstall) sonraki çalıştırmalar dosya değişmediği
+    # için reload'u ATLAR ve host sessizce eski kurallarla çalışmaya devam eder.
+    # Bu yüzden çalışan config'i (/opt) desired ile (/etc) karşılaştırıp HERHANGİ bir
+    # sapmada da reload ediyoruz. ('sysmon -c', /opt'u byte-identical yazdığı için bu
+    # karşılaştırma idempotent: senkronken tekrar reload etmez.)
+    - name: Read the desired Sysmon config (source of truth)
+      slurp:
+        src: "{{ sysmon_config_path }}"
+      register: sysmon_desired_cfg
+      become: true
+      when: sysmon_first_install is skipped
+
+    - name: Read the running Sysmon config (what the service actually loads)
+      slurp:
+        src: "{{ sysmon_runtime_config_path }}"
+      register: sysmon_running_cfg
+      become: true
+      failed_when: false
+      when: sysmon_first_install is skipped
+
+    - name: Update Sysmon configuration (config changed or running config drifted)
       command: sysmon -c {{ sysmon_config_path }}
       become: true
       when:
-        - (sysmon_service_status.rc | default(1)) == 0
-        - sysmon_config_file.changed
+        - sysmon_first_install is skipped
+        - >-
+          sysmon_config_file.changed
+          or (sysmon_running_cfg.content | default('')) != (sysmon_desired_cfg.content | default(''))
       changed_when: true
 
     - name: Ensure Sysmon service is enabled and started
@@ -84,3 +110,27 @@
         state: started
         enabled: true
       become: true
+
+    # ── Doğrulama ─────────────────────────────────────────────────────────────
+    # Yeşil bir çalıştırma "kurallar canlı" ANLAMINA GELMELİ. Reload sessizce
+    # uygulanmadıysa (ör. servis eski kuralları taşıyorsa) burada GÜRÜLTÜLÜ hata
+    # veririz: yapılandırılan her exclusion, çalışan config içinde fiilen var mı?
+    - name: Re-read the running Sysmon config for verification
+      slurp:
+        src: "{{ sysmon_runtime_config_path }}"
+      register: sysmon_running_cfg_verify
+      become: true
+
+    - name: Assert configured exclusions are present in the RUNNING Sysmon config
+      vars:
+        _running: "{{ sysmon_running_cfg_verify.content | b64decode }}"
+      assert:
+        that:
+          - item in _running
+        fail_msg: >-
+          Çalışan Sysmon config'i '{{ item }}' exclusion'ını içermiyor —
+          reload uygulanmamış, host eski/eksik kurallarla log topluyor.
+          'sysmon -c {{ sysmon_config_path }}' ve sysmon servisini kontrol edin.
+        quiet: true
+      loop: "{{ sysmon_excluded_network_images + sysmon_excluded_destination_ips }}"
+      when: (sysmon_excluded_network_images | length) + (sysmon_excluded_destination_ips | length) > 0

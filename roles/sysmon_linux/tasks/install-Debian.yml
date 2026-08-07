@@ -13,11 +13,14 @@
 # ansible'ın get_url/uri'si dahili urls.py'ye dayanır ve eski ansible-core
 # (<=2.14) Python 3.12+ hedeflerde 'CustomHTTPSConnection has no attribute
 # cert_file' ile çöker. wget hedefin TLS yığınını kullanır → bu sorunu aşar.
+# İndirme yalnızca /tmp'ye bir dosya bırakır — kalıcı sistem değişikliği DEĞİL.
+# Asıl durum değişikliği bir sonraki 'apt: deb:' adımında olur (o idempotent).
+# Bu yüzden changed_when: false → her koşuda gereksiz "changed" raporlamaz.
 - name: Download Microsoft repo config package (wget on target)
   command: >-
     wget -q -O /tmp/packages-microsoft-prod.deb
     https://packages.microsoft.com/config/{{ ansible_distribution | lower }}/{{ ansible_distribution_version }}/packages-microsoft-prod.deb
-  changed_when: true
+  changed_when: false
   become: true
 
 - name: Install Microsoft Repository (Debian/Ubuntu)
@@ -25,13 +28,13 @@
     deb: /tmp/packages-microsoft-prod.deb
   become: true
 
-- name: Update apt cache after repo add
-  apt:
-    update_cache: yes
-  become: true
-
+# 'update_cache' ayrı bir görev olarak çalıştırılınca Ansible bunu HER koşuda
+# "changed" sayar. Kurulum görevine dahil edince cache tazeleme, yeni MS repo'yu
+# görmek için gerçekleştiği yerde kalır ama "changed" yalnızca paket fiilen
+# kurulduğunda raporlanır → Debian yolu artık idempotent.
 - name: Install SysmonForLinux Package
   apt:
     name: sysmonforlinux
     state: present
+    update_cache: yes
   become: true
