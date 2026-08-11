@@ -1,69 +1,128 @@
+{#-
+  ══════════════════════════════════════════════════════════════════════════
+  TASARIM NOTLARI  (degistirmeden once okuyun)
+
+  1) HER filtre seti bir <RuleGroup groupRelation="..."> icine SARILMALIDIR.
+     Sysmon'un RuleGroup'suz varsayilani: ayni alan adi -> OR, FARKLI alan
+     adlari -> AND. Yani sarmalayicisiz bir exclude blogunda SourceIp,
+     DestinationIp ve Image satirlari AND'lenir ve blok pratikte olu kalir.
+     Kaynak: learn.microsoft.com/sysinternals/downloads/sysmon
+
+  2) Gurultulu ajanlar binary bazinda TAMAMEN susturulmaz. Bunun yerine
+     "kimlik + peer + port" uclusuyle dar bir <Rule groupRelation="and">
+     yazilir. Boylece ajanin BEKLENEN trafigi susar, BEKLENMEDIK trafigi
+     (C2, reverse shell, yanal hareket) gorunur kalir. Bir akista 'image'
+     ATLANABILIR; o zaman kural process'ten bagimsiz olarak peer+port
+     uzerinden calisir. Bunu ancak peer kisiti tek basina yeterince
+     daraltici oldugunda yapin (or. onaylanmis DNS VIP'leri).
+
+  3) Sysmon for Linux, dual-stack (::) soketlerde adresi IPv4-mapped IPv6
+     olarak yazar (172.16.41.11 -> 0:0:0:0:0:ffff:ac10:290b) ve
+     condition="is" STRING karsilastirmasidir. Her IP icin iki gosterim de
+     uretilir.
+
+  4) EID 5 / EID 9'da Image alani Linux'ta TAM YOL DEGIL, ciplak process
+     adidir (ornegin "multipathd"). "begin with /" catch-all'i calismaz.
+  ══════════════════════════════════════════════════════════════════════════
+-#}
+{%- macro v4mapped(ip) -%}
+{%- set o = ip.split('.') | map('int') | list -%}
+0:0:0:0:0:ffff:{{ '%x' % (o[0] * 256 + o[1]) }}:{{ '%x' % (o[2] * 256 + o[3]) }}
+{%- endmacro -%}
+{%- macro peer_reps(ip) -%}
+{{ [ip, v4mapped(ip)] | join(',') if ip is match('^\d+\.\d+\.\d+\.\d+$') else ip }}
+{%- endmacro -%}
 <Sysmon schemaversion="4.90">
   <EventFiltering>
 
-    <!-- Event ID 1 - ProcessCreate -->
-    <ProcessCreate onmatch="exclude">
-      <Image condition="end with">/usr/sbin/cron</Image>
-      <Image condition="end with">/usr/sbin/crond</Image>
-      <Image condition="end with">/usr/bin/monit</Image>
-      <Image condition="end with">/opt/splunkforwarder/bin/splunkd</Image>
-      <Image condition="end with">/usr/lib/systemd/systemd-journald</Image>
-      <Image condition="end with">/usr/bin/dbus-daemon</Image>
-      <!-- nginx process creation izlenmeyecek -->
-      <Image condition="end with">/usr/sbin/nginx</Image>
-      <CommandLine condition="contains">ansible-playbook</CommandLine>
-    </ProcessCreate>
-
-    <!-- Event ID 3 - NetworkConnect -->
-    <NetworkConnect onmatch="exclude">
-      <!-- Loopback trafiği -->
-      <SourceIp condition="is">127.0.0.1</SourceIp>
-      <SourceIp condition="is">::1</SourceIp>
-      <DestinationIp condition="is">127.0.0.1</DestinationIp>
-      <DestinationIp condition="is">::1</DestinationIp>
-      <!-- systemd-resolved stub resolver (127.0.0.53) üzerinden gelen DNS trafiği -->
-      <SourceIp condition="is">127.0.0.53</SourceIp>
-      <DestinationIp condition="is">127.0.0.53</DestinationIp>
-      <!-- İç ağ hedefleri — izlenmeyecek (sysmon_excluded_destination_ips) -->
-{% for ip in sysmon_excluded_destination_ips %}
-      <DestinationIp condition="is">{{ ip }}</DestinationIp>
+    <!-- ═══ EID 1 — ProcessCreate ═══════════════════════════════════════ -->
+    <RuleGroup name="pc-exclude" groupRelation="or">
+      <ProcessCreate onmatch="exclude">
+{% for image in processcreate_excluded_images %}
+        <Image condition="end with">{{ image }}</Image>
 {% endfor %}
-      <!-- Gürültülü process'ler — tüm network bağlantıları izlenmeyecek (sysmon_excluded_network_images) -->
-{% for image in sysmon_excluded_network_images %}
-      <Image condition="end with">{{ image }}</Image>
+{% for cl in processcreate_excluded_commandlines %}
+        <CommandLine condition="contains">{{ cl }}</CommandLine>
 {% endfor %}
-    </NetworkConnect>
+      </ProcessCreate>
+    </RuleGroup>
 
-    <!-- Event ID 5 - ProcessTerminate -->
-    <!-- Linux'ta tüm binary path'ler / ile başlar; catch-all exclude ile tamamen susturulur.
-         onmatch="include" + boş bırakmak Sysmon for Linux'ta olayları susturmaz. -->
-    <ProcessTerminate onmatch="exclude">
-      <Image condition="begin with">/</Image>
-    </ProcessTerminate>
+    <!-- ═══ EID 3 — NetworkConnect ══════════════════════════════════════ -->
+    <RuleGroup name="nc-exclude" groupRelation="or">
+      <NetworkConnect onmatch="exclude">
 
-    <!-- Event ID 9 - RawAccessRead -->
-    <!-- Linux'ta düşük değerli, devre dışı -->
-    <RawAccessRead onmatch="exclude">
-      <Image condition="begin with">/</Image>
-    </RawAccessRead>
+        <!-- Loopback / stub resolver — ayni alan adi, OR ile birlesir -->
+        <SourceIp condition="is">127.0.0.1</SourceIp>
+        <SourceIp condition="is">::1</SourceIp>
+        <SourceIp condition="is">127.0.0.53</SourceIp>
+        <DestinationIp condition="is">127.0.0.1</DestinationIp>
+        <DestinationIp condition="is">::1</DestinationIp>
+        <DestinationIp condition="is">127.0.0.53</DestinationIp>
 
-    <!-- Event ID 11 - FileCreate -->
-    <FileCreate onmatch="include">
-      <TargetFilename condition="begin with">/etc/</TargetFilename>
-      <TargetFilename condition="begin with">/boot/</TargetFilename>
-      <TargetFilename condition="begin with">/usr/local/bin/</TargetFilename>
-      <TargetFilename condition="begin with">/usr/bin/</TargetFilename>
-      <TargetFilename condition="begin with">/usr/sbin/</TargetFilename>
-      <TargetFilename condition="contains">/var/www/</TargetFilename>
-    </FileCreate>
+        <!-- ── Dar akis dislama kurallari ───────────────────────────────
+             Her akis icin: kimlik (Image) + peer IP + port UCUSU birden
+             tutmali. Ucunden biri sapmasa olay LOGLANIR.
+             ──────────────────────────────────────────────────────────── -->
+{% for flow in sysmon_network_flow_exclusions %}
+{%   set peer_field = 'SourceIp' if flow.direction == 'inbound' else 'DestinationIp' %}
+{%   set port_field = flow.port_field | default('DestinationPort') %}
+{%   for rep in peer_reps(flow.peer_ip).split(',') %}
+        <Rule name="{{ flow.name }}" groupRelation="and">
+{%     if flow.image is defined %}
+          <Image condition="end with">{{ flow.image }}</Image>
+{%     endif %}
+          <{{ peer_field }} condition="is">{{ rep }}</{{ peer_field }}>
+          <{{ port_field }} condition="is">{{ flow.port }}</{{ port_field }}>
+        </Rule>
+{%   endfor %}
+{% endfor %}
+      </NetworkConnect>
+    </RuleGroup>
 
-    <!-- Event ID 23 - FileDelete -->
-    <FileDelete onmatch="include">
-      <TargetFilename condition="begin with">/etc/</TargetFilename>
-      <TargetFilename condition="begin with">/boot/</TargetFilename>
-      <TargetFilename condition="contains">/var/www/</TargetFilename>
-      <TargetFilename condition="contains">/var/log/</TargetFilename>
-    </FileDelete>
+    <!-- ═══ EID 5 — ProcessTerminate ════════════════════════════════════
+         Linux'ta Image = ciklak process adi ("multipathd"), tam yol DEGIL.
+         "begin with /" ile catch-all YAZMAYIN — hicbir seyi susturmaz.
+         Asagidaki sentinel her zaman dogrudur, dolayisiyla hepsini disler. -->
+    <RuleGroup name="pt-exclude" groupRelation="or">
+      <ProcessTerminate onmatch="exclude">
+{% if processterminate_enabled %}
+{%   for image in processterminate_excluded_images %}
+        <Image condition="is">{{ image }}</Image>
+{%   endfor %}
+{% else %}
+        <Image condition="is not">__sysmon_never_matches__</Image>
+{% endif %}
+      </ProcessTerminate>
+    </RuleGroup>
+
+    <!-- ═══ EID 9 — RawAccessRead (Linux'ta dusuk deger) ════════════════ -->
+    <RuleGroup name="rar-exclude" groupRelation="or">
+      <RawAccessRead onmatch="exclude">
+        <Image condition="is not">__sysmon_never_matches__</Image>
+      </RawAccessRead>
+    </RuleGroup>
+
+    <!-- ═══ EID 11 — FileCreate ═════════════════════════════════════════ -->
+    <RuleGroup name="fc-include" groupRelation="or">
+      <FileCreate onmatch="include">
+        <TargetFilename condition="begin with">/etc/</TargetFilename>
+        <TargetFilename condition="begin with">/boot/</TargetFilename>
+        <TargetFilename condition="begin with">/usr/local/bin/</TargetFilename>
+        <TargetFilename condition="begin with">/usr/bin/</TargetFilename>
+        <TargetFilename condition="begin with">/usr/sbin/</TargetFilename>
+        <TargetFilename condition="contains">/var/www/</TargetFilename>
+      </FileCreate>
+    </RuleGroup>
+
+    <!-- ═══ EID 23 — FileDelete ═════════════════════════════════════════ -->
+    <RuleGroup name="fd-include" groupRelation="or">
+      <FileDelete onmatch="include">
+        <TargetFilename condition="begin with">/etc/</TargetFilename>
+        <TargetFilename condition="begin with">/boot/</TargetFilename>
+        <TargetFilename condition="contains">/var/www/</TargetFilename>
+        <TargetFilename condition="contains">/var/log/</TargetFilename>
+      </FileDelete>
+    </RuleGroup>
 
   </EventFiltering>
 </Sysmon>

@@ -1,38 +1,134 @@
 ---
-# ─────────────────────────────────────────────────────────────────────────────
-# Bu dosya envantere bitişik olduğu için (inventory/group_vars/all.yml) TÜM
-# hostlar için otomatik yüklenir. SIEM hedefini burada ayarlayın.
-# ─────────────────────────────────────────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════════════
+# inventory/group_vars/all.yml
+#
+# Bu dosya envantere bitisik oldugu icin TUM hostlara otomatik uygulanir.
+# Bu yuzden buraya YALNIZCA ortamin tamaminda gecerli olan seyler yazilir.
+# Role/rol grubuna ozgu gurultu dislama kurallari group_vars/<grup>.yml veya
+# host_vars/<host>.yml altina gider. (Ornek: k8s node'lari icin asagiya bkz.)
+# ═════════════════════════════════════════════════════════════════════════════
 
-# SIEM destination  ───  ⚠️ KENDİ SIEM/collector ADRESİNİZLE DEĞİŞTİRİN
+# ── SIEM hedefi ─────────────────────────────────────────────────────────────
+# ⚠️ KENDI SIEM/collector ADRESINIZLE DEGISTIRIN
 siem_host: "192.168.42.129"
 siem_port: 514
-siem_protocol: "tcp"        # tcp | udp  (lab testinde tcp önerilir: teslimi doğrulamak kolay)
+siem_protocol: "tcp"        # tcp | udp  (lab testinde tcp: teslimi dogrulamak kolay)
 
-# Sysmon (olaylar syslog'a tag=sysmon ile gider; ayrı log dosyası yok)
+# ── Dosya yollari ───────────────────────────────────────────────────────────
 sysmon_config_path: "/etc/sysmon/sysmon-config.xml"
-
-# Auditd kural dosyası (rules.d altında augenrules ile yüklenir)
 audit_rules_path: "/etc/audit/rules.d/99-siem.rules"
 
-# Sysmon NetworkConnect exclusion — hedef IP listesi
-# Zabbix, monitoring vb. araçların hedef IP'lerini buraya ekleyin.
-sysmon_excluded_destination_ips:
-  - "192.168.42.129"
+# ── Ortam sabitleri ─────────────────────────────────────────────────────────
+zabbix_server_ip: "172.16.1.1"
+dns_resolver_vips:            # DNS sunuculari
+  - "172.16.1.1"
+  - "172.16.1.1"             
 
-# Sysmon NetworkConnect exclusion — image (binary path) listesi
-# NetworkConnect üretmesini istemediğiniz gürültülü process'leri buraya ekleyin.
-sysmon_excluded_network_images:
-  # Zabbix
-  - "/usr/sbin/zabbix_agent2"
-  - "/usr/sbin/zabbix_agentd"
-  # Kubernetes control plane & node bileşenleri
-  - "/usr/local/bin/kube-apiserver"
-  - "/usr/local/bin/kube-controller-manager"
-  - "/usr/local/bin/kube-scheduler"
-  - "/usr/local/bin/kube-proxy"
-  - "/usr/bin/kubelet"
-  # Container runtime
-  - "/usr/bin/containerd"
-  - "/usr/local/bin/containerd"
-  - "/usr/bin/containerd-shim-runc-v2"
+# ═════════════════════════════════════════════════════════════════════════════
+# EID 1 — ProcessCreate dislama
+# ═════════════════════════════════════════════════════════════════════════════
+processcreate_excluded_images:
+  - "/usr/sbin/cron"
+  - "/usr/sbin/crond"
+  - "/usr/bin/monit"
+  - "/usr/lib/systemd/systemd-journald"
+  - "/usr/bin/dbus-daemon"
+
+processcreate_excluded_commandlines:
+  - "ansible-playbook"
+
+# ═════════════════════════════════════════════════════════════════════════════
+# EID 3 — NetworkConnect dislama
+#
+# KURAL: binary bazinda genel dislama YAZILMAZ. Her giris
+#   kimlik (Image) + peer IP + port
+# uclusunu birden saglayan DAR bir akistir. Ucunden biri sapan her baglanti
+# LOGLANIR — ajan uzerinden C2, yanal hareket, beklenmedik peer gorunur kalir.
+#
+# Yeni bir satir eklemeden once sorun: "bu kural, bu binary'nin ele
+# gecirilmesi halinde saldirganin isine yarar mi?" Cevap evet ise kurali
+# daraltin, kapsamini genisletmeyin.
+# ═════════════════════════════════════════════════════════════════════════════
+sysmon_network_flow_exclusions:
+
+  # Zabbix passive check: Zabbix srv -> agent :10050 (gelen)
+  - name: "zabbix-passive-poll"
+    image: "/usr/sbin/zabbix_agent2"
+    peer_ip: "{{ zabbix_server_ip }}"
+    direction: "inbound"
+    port: 10050
+
+  # Zabbix active check: agent -> Zabbix srv :10051 (giden)
+  - name: "zabbix-active-checks"
+    image: "/usr/sbin/zabbix_agent2"
+    peer_ip: "{{ zabbix_server_ip }}"
+    direction: "outbound"
+    port: 10051
+
+  # ── DNS ───────────────────────────────────────────────────────────────
+  # Bu ortamda TUM DNS trafigi onaylanmis ic resolver VIP'lerine gider.
+  # Bu yuzden kural process'ten BAGIMSIZ (image yok): hangi binary olursa
+  # olsun, peer onaylanmis VIP ise gurultudur.
+  #
+  # Peer kisiti KALDIRILMAZ. Korunan sinyal tam olarak budur: bir process
+  # :53'u ONAYLANMAMIS bir resolver'a konusursa (8.8.8.8, saldirgan
+  # kontrolundeki sunucu, DoH gateway) o olay QRadar'a DUSER. Blanket bir
+  # "SourcePort 53" kurali bu sinyali yok ederdi.
+  #
+  # Sorgu icerigi zaten Sysmon'da yok; DNS tunnelling tespiti DNS
+  # sunucularinin query log'larindan yapilir, bu katmandan degil.
+
+  - name: "dns-reply-vip1"      # VIP:53 -> host (gelen yanit)
+    peer_ip: "{{ dns_resolver_vips[0] }}"
+    direction: "inbound"
+    port: 53
+    port_field: "SourcePort"
+
+  - name: "dns-query-vip1"      # host -> VIP:53 (giden sorgu)
+    peer_ip: "{{ dns_resolver_vips[0] }}"
+    direction: "outbound"
+    port: 53
+
+
+  - name: "dns-reply-vip2"      # VIP:53 -> host (gelen yanit)
+    peer_ip: "{{ dns_resolver_vips[1] }}"
+    direction: "inbound"
+    port: 53
+    port_field: "SourcePort"
+
+  - name: "dns-query-vip2"      # host -> VIP:53 (giden sorgu)
+    peer_ip: "{{ dns_resolver_vips[1] }}"
+    direction: "outbound"
+    port: 53
+
+  # Kendi log iletimimiz: rsyslogd -> SIEM collector
+  # Bu akisi susturmak, rsyslogd'nin BASKA bir hedefe log yonlendirmesini
+  # (exfiltrasyon) gorunur birakir — cunku peer + port sabitlenmis durumda.
+  - name: "rsyslog-to-siem"
+    image: "/usr/sbin/rsyslogd"
+    peer_ip: "{{ siem_host }}"
+    direction: "outbound"
+    port: "{{ siem_port }}"
+
+# ═════════════════════════════════════════════════════════════════════════════
+# EID 5 — ProcessTerminate
+# Linux'ta Image alani CIPLAK PROCESS ADIDIR ("multipathd"), tam yol degil.
+# "begin with /" ile catch-all yazmayin; hicbir seyi susturmaz.
+# ═════════════════════════════════════════════════════════════════════════════
+processterminate_enabled: false       # false -> EID 5 tamamen kapali
+processterminate_excluded_images:     # yalnizca enabled: true iken kullanilir
+  - "multipathd"
+  - "gpg-agent"
+  - "udisksd"
+
+# ═════════════════════════════════════════════════════════════════════════════
+# KULLANIMDAN KALDIRILDI — yeni sablon bu degiskenleri OKUMAZ.
+# Bos birakildi ki roldeki eski assert dongusu kirilmasin. Rol
+# guncellendikten sonra bu iki satir da silinmelidir.
+#
+# Neden kaldirildi: her ikisi de tek alanli genel dislamaydi. IP tabanli
+# olan gelen baglantilari hic yakalamiyordu (peer o durumda SourceIp'te),
+# image tabanli olan ise ilgili binary'nin TUM ag davranisini kor ediyordu.
+# ═════════════════════════════════════════════════════════════════════════════
+sysmon_excluded_destination_ips: []
+sysmon_excluded_network_images: []
