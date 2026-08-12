@@ -38,6 +38,29 @@
     <!-- ═══ EID 1 — ProcessCreate ═══════════════════════════════════════ -->
     <RuleGroup name="pc-exclude" groupRelation="or">
       <ProcessCreate onmatch="exclude">
+        <!-- ── Imza bazli dislama (DAR) ─────────────────────────────────
+             Kimlik (Image) + TAM komut satiri + (ops.) User birlikte tutmali.
+             /usr/bin/dash, /usr/bin/bash, /usr/bin/who gibi binary'leri
+             asagidaki genis listeye EKLEMEYIN: saldirganin en cok kullandigi
+             binary'ler bunlar. Ayni binary baska bir argumanla calisirsa
+             LOGLANIR — korunmak istenen sinyal budur.
+
+             condition="is" TAM ESLESMEDIR. Zabbix template'i degisirse imza
+             tutmaz ve gurultu geri gelir; bu ISTENEN davranistir.
+
+             | e  = XML escape. Komut satirlari > ve & icerdigi icin sart.
+             ──────────────────────────────────────────────────────────── -->
+{% for sig in processcreate_excluded_signatures %}
+        <Rule name="{{ sig.name | e }}" groupRelation="and">
+          <Image condition="end with">{{ sig.image | e }}</Image>
+          <CommandLine condition="is">{{ sig.commandline | e }}</CommandLine>
+{%   if sig.user is defined %}
+          <User condition="is">{{ sig.user | e }}</User>
+{%   endif %}
+        </Rule>
+{% endfor %}
+
+        <!-- Genis dislama: argumansiz daemon calisimlari icin. -->
 {% for image in processcreate_excluded_images %}
         <Image condition="end with">{{ image }}</Image>
 {% endfor %}

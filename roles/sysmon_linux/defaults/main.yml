@@ -22,3 +22,9 @@ sysmon_excluded_destination_ips: []
 # NetworkConnect exclusion: image (binary path) listesi
 # Zabbix, Kubernetes bileşenleri gibi gürültülü process'leri buraya ekle
 sysmon_excluded_network_images: []
+
+# ProcessCreate exclusion: imza listesi (image + commandline + ops. user)
+# group_vars/all.yml veya host_vars'tan doldurulur.
+processcreate_excluded_signatures: []
+processcreate_excluded_images: []
+processcreate_excluded_commandlines: []

@@ -28,6 +28,60 @@ dns_resolver_vips:            # DNS sunuculari
 # ═════════════════════════════════════════════════════════════════════════════
 # EID 1 — ProcessCreate dislama
 # ═════════════════════════════════════════════════════════════════════════════
+# ── Imza bazli dislama: kimlik + TAM komut satiri + (ops.) user ─────────────
+# 5 dakikalik olcumde 82 ProcessCreate olayinin TAMAMI bu imzalardan geliyordu
+# (4 host, Zabbix 60sn poll araligi). 535 endpoint'e olceklendiginde
+# ~131K olay/saat eder.
+#
+# Neden Image bazli genis dislama DEGIL: bu imzalarin binary'leri dash, bash,
+# who, wc — saldirganin en cok kullandiklari. Toptan susturmak reverse shell
+# ve 'curl | bash' zincirlerini de kor ederdi.
+processcreate_excluded_signatures:
+
+  # Zabbix system.users.num — her poll 3 process uretir.
+  # 'sh -c ...' bazi hostlarda dash, bazilarinda bash olarak calisiyor;
+  # ikisi de ayri imza olarak tanimli.
+  - name: "zbx-users-num-sh-dash"
+    image: "/usr/bin/dash"
+    commandline: "sh -c who | wc -l"
+    user: "zabbix"
+  - name: "zbx-users-num-sh-bash"
+    image: "/usr/bin/bash"
+    commandline: "sh -c who | wc -l"
+    user: "zabbix"
+  - name: "zbx-users-num-who"
+    image: "/usr/bin/who"
+    commandline: "who"
+    user: "zabbix"
+  - name: "zbx-users-num-wc"
+    image: "/usr/bin/wc"
+    commandline: "wc -l"
+    user: "zabbix"
+
+  # Zabbix UserParameter'lari — root olarak calisiyor, bu yuzden 'user'
+  # kisiti yok (root kisiti hicbir daraltma saglamaz). Daraltici olan
+  # komut satirinin kendisi.
+  - name: "zbx-vm-memory-free"
+    image: "/usr/bin/gawk"
+    commandline: "awk /^(MemFree|Buffers|Cached):/ {free += $2}; END {print free} /proc/meminfo"
+  - name: "zbx-sum-agg"
+    image: "/usr/bin/gawk"
+    commandline: "awk { sum += $1 }; END { print 0+sum }"
+  - name: "zbx-qemu-discovery"
+    image: "/usr/bin/pgrep"
+    commandline: "pgrep -d   -- ^qemu(-(kvm|system-.+)|:.{1,11})$"
+  - name: "zbx-sleep-poll"
+    image: "/usr/bin/sleep"
+    commandline: "sleep 60"
+
+  # sysstat cron (Debian/Ubuntu)
+  - name: "sysstat-sa1-outer"
+    image: "/usr/bin/dash"
+    commandline: "/bin/sh -c command -v debian-sa1 > /dev/null && debian-sa1 1 1"
+  - name: "sysstat-sa1-inner"
+    image: "/usr/bin/dash"
+    commandline: "/bin/sh /usr/lib/sysstat/debian-sa1 1 1"
+
 processcreate_excluded_images:
   - "/usr/sbin/cron"
   - "/usr/sbin/crond"
