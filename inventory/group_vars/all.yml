@@ -10,7 +10,7 @@
 
 # ── SIEM hedefi ─────────────────────────────────────────────────────────────
 # ⚠️ KENDI SIEM/collector ADRESINIZLE DEGISTIRIN
-siem_host: "192.168.42.129"
+siem_host: "192.168.41.100"
 siem_port: 514
 siem_protocol: "tcp"        # tcp | udp  (lab testinde tcp: teslimi dogrulamak kolay)
 
@@ -19,10 +19,11 @@ sysmon_config_path: "/etc/sysmon/sysmon-config.xml"
 audit_rules_path: "/etc/audit/rules.d/99-siem.rules"
 
 # ── Ortam sabitleri ─────────────────────────────────────────────────────────
-zabbix_server_ip: "172.16.1.1"
+zabbix_server_ip: "192.168.41.101"
 dns_resolver_vips:            # DNS sunuculari
-  - "172.16.1.1"
-  - "172.16.1.1"             
+  - "192.168.41.12"
+  - "192.168.41.13"
+         
 
 # ═════════════════════════════════════════════════════════════════════════════
 # EID 1 — ProcessCreate dislama
@@ -64,42 +65,6 @@ sysmon_network_flow_exclusions:
     peer_ip: "{{ zabbix_server_ip }}"
     direction: "outbound"
     port: 10051
-
-  # ── DNS ───────────────────────────────────────────────────────────────
-  # Bu ortamda TUM DNS trafigi onaylanmis ic resolver VIP'lerine gider.
-  # Bu yuzden kural process'ten BAGIMSIZ (image yok): hangi binary olursa
-  # olsun, peer onaylanmis VIP ise gurultudur.
-  #
-  # Peer kisiti KALDIRILMAZ. Korunan sinyal tam olarak budur: bir process
-  # :53'u ONAYLANMAMIS bir resolver'a konusursa (8.8.8.8, saldirgan
-  # kontrolundeki sunucu, DoH gateway) o olay QRadar'a DUSER. Blanket bir
-  # "SourcePort 53" kurali bu sinyali yok ederdi.
-  #
-  # Sorgu icerigi zaten Sysmon'da yok; DNS tunnelling tespiti DNS
-  # sunucularinin query log'larindan yapilir, bu katmandan degil.
-
-  - name: "dns-reply-vip1"      # VIP:53 -> host (gelen yanit)
-    peer_ip: "{{ dns_resolver_vips[0] }}"
-    direction: "inbound"
-    port: 53
-    port_field: "SourcePort"
-
-  - name: "dns-query-vip1"      # host -> VIP:53 (giden sorgu)
-    peer_ip: "{{ dns_resolver_vips[0] }}"
-    direction: "outbound"
-    port: 53
-
-
-  - name: "dns-reply-vip2"      # VIP:53 -> host (gelen yanit)
-    peer_ip: "{{ dns_resolver_vips[1] }}"
-    direction: "inbound"
-    port: 53
-    port_field: "SourcePort"
-
-  - name: "dns-query-vip2"      # host -> VIP:53 (giden sorgu)
-    peer_ip: "{{ dns_resolver_vips[1] }}"
-    direction: "outbound"
-    port: 53
 
   # Kendi log iletimimiz: rsyslogd -> SIEM collector
   # Bu akisi susturmak, rsyslogd'nin BASKA bir hedefe log yonlendirmesini

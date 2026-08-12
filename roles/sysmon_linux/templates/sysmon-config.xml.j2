@@ -59,6 +59,18 @@
         <DestinationIp condition="is">::1</DestinationIp>
         <DestinationIp condition="is">127.0.0.53</DestinationIp>
 
+        <!-- DNS resolver VIP'leri: listedeki her IP icin inbound/outbound 53 -->
+      {% for vip in dns_resolver_vips %}
+        <Rule name="dns-reply-vip{{ loop.index }}" groupRelation="and">
+          <SourceIp condition="is">{{ vip }}</SourceIp>
+          <SourcePort condition="is">53</SourcePort>
+        </Rule>
+        <Rule name="dns-query-vip{{ loop.index }}" groupRelation="and">
+          <DestinationIp condition="is">{{ vip }}</DestinationIp>
+          <DestinationPort condition="is">53</DestinationPort>
+        </Rule>
+      {% endfor %}
+
         <!-- ── Dar akis dislama kurallari ───────────────────────────────
              Her akis icin: kimlik (Image) + peer IP + port UCUSU birden
              tutmali. Ucunden biri sapmasa olay LOGLANIR.

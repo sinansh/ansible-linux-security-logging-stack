@@ -1,0 +1,6 @@
+- name: Install auditd
+  package:
+    name: auditd
+    state: present
+  become: true
+
